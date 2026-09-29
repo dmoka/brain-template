@@ -71,3 +71,5 @@ brain without you, add a cron line: `*/15 * * * * cd ~/brain && ./sync.sh`.
 - `sources/` is evidence and never edited; everything else is interpretation and links back to it.
 
 MIT license.
+
+Last verified: 2026-09-29 with Claude Code 2.1.284 (fresh copy in a node:22 container: install, capture, triage, lint)
