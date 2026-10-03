@@ -9,7 +9,7 @@ import argparse, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-FOLDERS = {"guidelines": "Guidelines", "decisions": "Decisions", "projects": "Projects", "notes": "Notes"}
+FOLDERS = {"intents": "Intents", "guidelines": "Guidelines", "decisions": "Decisions", "projects": "Projects", "notes": "Notes"}
 NEEDS_SOURCE = ("notes", "guidelines")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+?)(?:#[^)]*)?\)")
 TASTE_MAX = 150

@@ -13,6 +13,7 @@ and the three skills that keep it filled and true.
 |---|---|
 | `index.md` | one line per file; agents read it first |
 | `taste.md` | what good means to you: never, prefer, tie-breakers — each with a reason and a date |
+| `intents/` | what you want: one goal per file, with why and how you'll know it's met |
 | `inbox/` | new things land here; triage empties it |
 | `guidelines/` | how you build in every project |
 | `decisions/` | one per file, dated; changed ones are marked superseded, never deleted |

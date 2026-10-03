@@ -13,6 +13,7 @@ Triage does the thinking capture skipped. Read `AGENTS.md` and `taste.md` first.
 
    | Home | When | Example |
    |---|---|---|
+   | `intents/<goal>.md` | something you want to reach, with why and how you'll know it's met | "the example app takes its first payment" |
    | `guidelines/<topic>.md` | how you build in every project | "integration tests use a real database" |
    | `decisions/YYYY-MM-DD-<topic>.md` | a choice with a date and a reason | "Postgres is the default database" |
    | `projects/<name>.md` | a fact about one project's admin: where it runs, status, owner | "the app moved to a new server" |
