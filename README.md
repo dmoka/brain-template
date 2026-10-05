@@ -5,7 +5,7 @@ project, read by every agent you run. From the AI Agent Engineer course, module 
 
 Project-specific knowledge stays in each project (its AGENTS.md and skills). This repo holds
 what's true everywhere: your guidelines, your taste, your decisions, a short file per project,
-and the three skills that keep it filled and true.
+and the four skills that fill it, keep it true, and answer from it.
 
 ## What's inside
 
@@ -23,6 +23,7 @@ and the three skills that keep it filled and true.
 | `skills/capture` | "save this" → one file in `inbox/` |
 | `skills/triage` | files each inbox item in one home, links its source, empties the inbox |
 | `skills/lint` | fixes index drift and dead links, reports contradictions |
+| `skills/ask-brain` | "what does my brain say about X?" → an answer from the notes, with a link to each one |
 | `AGENTS.md` | the rules every agent follows in this repo |
 
 The sample files show the shape. Replace them with your own, or delete them.
@@ -34,7 +35,7 @@ The sample files show the shape. Replace them with your own, or delete them.
    ```bash
    cd ~/brain && ./install.sh
    ```
-   It links the three skills into `~/.claude/skills` and adds one line to your global `~/.claude/CLAUDE.md`:
+   It links the four skills into `~/.claude/skills` and adds one line to your global `~/.claude/CLAUDE.md`:
    > My second brain is at ~/brain. Read its index.md first, then grep it, before you search anywhere else, and save new decisions, guidelines and gotchas there (see its AGENTS.md).
 
    Run it again any time; it doesn't duplicate anything.
@@ -106,4 +107,4 @@ The box mounts `~/.config/brain` read-only. `sync.sh` uses the key only for its 
 
 MIT license.
 
-Last verified: 2026-10-05 with Claude Code 2.1.284 (fresh copy in a node:22 container: install twice, lint clean, sync.sh against a local bare remote with no git identity, an unreachable remote, a held lock, a folder owned by another user)
+Last verified: 2026-10-05 with Claude Code 2.1.284 (fresh copy in a node:22 container: install twice (4 skills linked, one pointer line), lint clean, sync.sh against a local bare remote with no git identity, an unreachable remote, a held lock, a folder owned by another user)
