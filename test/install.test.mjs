@@ -189,3 +189,58 @@ test("node install.mjs runs as a script", { skip: process.platform === "win32" }
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /Claude Code +\d+ linked/);
 });
+
+test("Codex and Cursor share ~/.agents/skills: one set of links", () => {
+  const home = tmpHome(".codex", ".cursor");
+  const { code, out } = run(home);
+  assert.equal(code, 0);
+  assert.match(out, /Codex +\d+ linked in ~\/.agents\/skills/);
+  assert.match(out, /Cursor +\d+ linked in ~\/.agents\/skills/);
+  assert.deepEqual(linksIn(path.join(home, ".agents/skills")), skills);
+});
+
+test("CODEX_HOME alone counts as Codex found", () => {
+  const agents = findAgents({ env: { CODEX_HOME: "/x" }, home: "/h", platform: "linux", has: nowhere, onPath: nowhere });
+  assert.deepEqual(agents.map((a) => a.found), [false, true, false]);
+  assert.equal(agents[1].file, path.join("/x", "AGENTS.md"));
+});
+
+test("a file on the PATH that is not executable is not an installed agent", { skip: process.platform === "win32" }, () => {
+  const bin = tmpHome();
+  fs.writeFileSync(path.join(bin, "claude"), "", { mode: 0o644 });
+  fs.writeFileSync(path.join(bin, "codex"), "", { mode: 0o755 });
+  const onPath = makeOnPath({ env: { PATH: bin }, platform: process.platform });
+  assert.equal(onPath("claude"), false);
+  assert.equal(onPath("codex"), true);
+});
+
+test("Windows EACCES (a plain permission error) is not the Developer Mode message", () => {
+  const home = tmpHome(".claude");
+  const eacces = () => Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+  const f = { ...fs, symlinkSync: () => { throw eacces(); } };
+  assert.throws(() => run(home, { platform: "win32", f }), /EACCES/);
+});
+
+test("skills: folders and linked folders count, hidden folders and files do not", () => {
+  const root = tmpHome("brain/skills/plain", "brain/skills/.hidden", "elsewhere/linked-skill");
+  const fake = path.join(root, "brain");
+  fs.symlinkSync(path.join(root, "elsewhere/linked-skill"), path.join(fake, "skills/linked"), "dir");
+  fs.writeFileSync(path.join(fake, "skills/notes.txt"), "");
+  const home = tmpHome(".claude");
+  const lines = [];
+  install({ brain: fake, env: {}, home, platform: process.platform, onPath: nowhere, log: (l) => lines.push(l) });
+  assert.deepEqual(linksIn(path.join(home, ".claude/skills")), ["linked", "plain"]);
+});
+
+test("the brain through another path (a symlink): pointer line already in, links ok", () => {
+  const root = tmpHome();
+  const alias = path.join(root, "brain-alias");
+  fs.symlinkSync(brain, alias, "dir");
+  const home = tmpHome(".claude");
+  install({ brain: alias, env: {}, home, platform: process.platform, onPath: nowhere, log: () => {} });
+  const again = [];
+  install({ brain, env: {}, home, platform: process.platform, onPath: nowhere, log: (l) => again.push(l) });
+  assert.match(again.join("\n"), /Claude Code +\d+ link ok .* already in ~\/.claude\/CLAUDE.md/);
+  assert.equal(fs.readFileSync(path.join(home, ".claude/CLAUDE.md"), "utf8").split("My second brain is at").length - 1, 1);
+  assert.equal(fs.readlinkSync(path.join(home, ".claude/skills", skills[0])), path.join(alias, "skills", skills[0]));
+});

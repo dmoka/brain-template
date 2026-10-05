@@ -81,7 +81,8 @@ The brain is a git repo, and every agent reads the latest version:
 node sync.mjs   # commit what changed, pull --rebase, push
 ```
 Agents run it after they change the brain (AGENTS.md says so). For a machine that edits the
-brain without you, add a cron line: `*/15 * * * * cd ~/brain && node sync.mjs`. A push that fails leaves the commit
+brain without you, add a cron line. Cron does not see your PATH, so give node's full path (`command -v node` prints it):
+`*/15 * * * * cd ~/brain && /usr/local/bin/node sync.mjs`. A push that fails leaves the commit
 here, says "NOT pushed" and exits 1; the next run pushes it.
 
 ## In a dev container
@@ -120,4 +121,4 @@ The box mounts `~/.config/brain` read-only. `sync.mjs` uses the key only for its
 
 MIT license.
 
-Last verified: 2026-10-05 with Claude Code 2.1.289, Node 22 (`node --test`: 24 tests green in a node:22 container as root and on macOS; `node install.mjs` twice in a node:22 container with Claude Code + Codex folders (4 skills linked, one pointer line each), Cursor only (paste line printed), no agent (exit 1), and on macOS in a scratch home; `sync.mjs` against a local bare remote with no git identity, an unreachable remote, a refused push, a rebase conflict, a held lock, a deploy key over SSH, a folder owned by another user. Windows: Developer Mode path unit-tested with a mocked EPERM, not run on Windows)
+Last verified: 2026-10-05 with Claude Code 2.1.289, Node 22 (`node --test`: 34 tests green in node:22 and node:18 containers as root and on macOS; `node install.mjs` twice in a node:22 container with Claude Code + Codex folders (4 skills linked, one pointer line each), Cursor only (paste line printed), no agent (exit 1), and on macOS in a scratch home; `sync.mjs` against a local bare remote with no git identity, an unreachable remote, a refused push, a rebase conflict, a held lock, a failed commit, SIGTERM during a push, a run from another folder, a deploy key over SSH, a folder owned by another user. Windows: Developer Mode path unit-tested with a mocked EPERM, not run on Windows)

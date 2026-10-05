@@ -2,7 +2,7 @@
 // Each test copies sync.mjs into a fresh brain repo in a temporary folder; no git identity, no
 // global or system git config, so it behaves like a fresh container.
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,8 +32,8 @@ function setup() {
   git(brain, "commit", "-q", "-m", "start");
   git(brain, "remote", "add", "origin", remote);
   git(brain, "push", "-q", "-u", "origin", "main");
-  const sync = (extra = {}) => {
-    const r = spawnSync(process.execPath, ["sync.mjs"], { cwd: brain, env: { ...env, ...extra }, encoding: "utf8" });
+  const sync = (extra = {}, cwd = brain) => {
+    const r = spawnSync(process.execPath, [path.join(brain, "sync.mjs")], { cwd, env: { ...env, ...extra }, encoding: "utf8" });
     return { code: r.status, out: r.stdout + r.stderr };
   };
   return { root, env, git, remote, brain, sync };
@@ -81,6 +81,7 @@ test("unreachable remote: commits here, says NOT pushed, exits 1, frees the lock
   assert.equal(r.code, 1);
   assert.match(r.out, /brain committed here, but NOT pushed \(see the error above\)\./);
   assert.match(git(brain, "log", "-1", "--format=%s"), /^brain: sync /);
+  assert.doesNotMatch(r.out, /rebase stopped/);
   assert.equal(fs.existsSync(path.join(brain, ".git", "brain-sync.lock")), false);
 });
 
@@ -156,4 +157,53 @@ test("a brain owned by another user: trusted for this run only", asRoot, () => {
   const r = sync();
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /brain synced/);
+});
+
+test("run from another folder (cron): syncs the brain it lives in", () => {
+  const { root, brain, remote, git, sync } = setup();
+  fs.writeFileSync(path.join(brain, "note.md"), "from cron\n");
+  const r = sync({}, root);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(git(remote, "show", "main:note.md"), "from cron");
+});
+
+test("a git identity that exists is kept", () => {
+  const { brain, remote, env, git, sync } = setup();
+  fs.writeFileSync(env.GIT_CONFIG_GLOBAL, "[user]\n\tname = Ada\n\temail = ada@example.com\n");
+  fs.writeFileSync(path.join(brain, "note.md"), "new\n");
+  assert.equal(sync().code, 0);
+  assert.equal(git(remote, "log", "-1", "--format=%an <%ae>"), "Ada <ada@example.com>");
+});
+
+test("a commit that fails: stops with git's error, nothing pushed, lock freed", posixOnly, () => {
+  const { brain, remote, git, sync } = setup();
+  fs.writeFileSync(path.join(brain, ".git/hooks/pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const before = git(remote, "rev-parse", "main");
+  fs.writeFileSync(path.join(brain, "note.md"), "new\n");
+  const r = sync();
+  assert.notEqual(r.code, 0);
+  assert.doesNotMatch(r.out, /brain synced/);
+  assert.equal(git(remote, "rev-parse", "main"), before);
+  assert.equal(fs.existsSync(path.join(brain, ".git", "brain-sync.lock")), false);
+});
+
+test("killed while it pushes (SIGTERM): stops at once, exits 143, frees the lock", posixOnly, async () => {
+  const { brain, remote, env } = setup();
+  fs.writeFileSync(path.join(remote, "hooks", "pre-receive"), "#!/bin/sh\nsleep 5\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(brain, "note.md"), "new\n");
+  const p = spawn(process.execPath, [path.join(brain, "sync.mjs")], { cwd: brain, env, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  p.stdout.on("data", (d) => (out += d));
+  const lock = path.join(brain, ".git", "brain-sync.lock");
+  const started = Date.now();
+  while (!fs.existsSync(lock) && Date.now() - started < 5000) await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setTimeout(r, 700)); // inside the push, waiting for the hook
+  const killedAt = Date.now();
+  p.kill("SIGTERM");
+  // "exit", not "close": the hook's sleep still holds the output pipes open.
+  const code = await new Promise((r) => p.on("exit", (c, sig) => r(c ?? sig)));
+  assert.equal(code, 143);
+  assert.ok(Date.now() - killedAt < 3000, "did not wait for git");
+  assert.doesNotMatch(out, /brain synced/);
+  assert.equal(fs.existsSync(lock), false);
 });

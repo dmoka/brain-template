@@ -58,7 +58,10 @@ export function makeOnPath({ env, platform, fs: f = fs }) {
     dirs.some((dir) =>
       exts.some((ext) => {
         try {
-          return f.statSync(path.join(dir, cmd + ext)).isFile();
+          const file = path.join(dir, cmd + ext);
+          if (!f.statSync(file).isFile()) return false;
+          if (platform !== "win32") f.accessSync(file, fs.constants.X_OK);
+          return true;
         } catch {
           return false;
         }
@@ -66,10 +69,24 @@ export function makeOnPath({ env, platform, fs: f = fs }) {
     );
 }
 
-const windowsRefused = (err, platform) => platform === "win32" && ["EPERM", "EACCES"].includes(err.code);
+// Windows without Developer Mode refuses a symlink with EPERM.
+const windowsRefused = (err, platform) => platform === "win32" && err.code === "EPERM";
+
+// The same folder, also through a symlink or in another letter case on Windows.
+function sameDir(f, platform, a, b) {
+  const real = (p) => {
+    try {
+      return f.realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
+  const [x, y] = [real(a), real(b)];
+  return platform === "win32" ? x.toLowerCase() === y.toLowerCase() : x === y;
+}
 
 // One skill folder: "linked", "link ok", or "left alone" (something that is not a link is in the way).
-function linkSkill(f, target, link) {
+function linkSkill(f, platform, target, link) {
   let st = null;
   try {
     st = f.lstatSync(link);
@@ -78,7 +95,7 @@ function linkSkill(f, target, link) {
   }
   if (st && !st.isSymbolicLink()) return "left alone";
   if (st) {
-    if (path.resolve(path.dirname(link), f.readlinkSync(link)) === target) return "link ok";
+    if (sameDir(f, platform, path.resolve(path.dirname(link), f.readlinkSync(link)), target)) return "link ok";
     f.unlinkSync(link);
     f.symlinkSync(target, link, "dir");
     return "link ok";
@@ -89,10 +106,16 @@ function linkSkill(f, target, link) {
 
 export function install({ brain, env, home, platform, fs: f = fs, onPath, tmpdir = os.tmpdir(), log = console.log }) {
   const skillsRoot = path.join(brain, "skills");
+  const isDir = (p) => {
+    try {
+      return f.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  };
   const skills = f
-    .readdirSync(skillsRoot, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name)
+    .readdirSync(skillsRoot)
+    .filter((name) => !name.startsWith(".") && isDir(path.join(skillsRoot, name)))
     .sort();
   const has = (p) => f.existsSync(p);
   const agents = findAgents({ env, home, platform, has, onPath: onPath || makeOnPath({ env, platform, fs: f }) });
@@ -127,7 +150,7 @@ export function install({ brain, env, home, platform, fs: f = fs, onPath, tmpdir
       for (const name of skills) {
         const link = path.join(agent.skills, name);
         try {
-          results.push([name, linkSkill(f, path.join(skillsRoot, name), link)]);
+          results.push([name, linkSkill(f, platform, path.join(skillsRoot, name), link)]);
         } catch (err) {
           if (windowsRefused(err, platform)) {
             log(DEV_MODE);
@@ -142,7 +165,8 @@ export function install({ brain, env, home, platform, fs: f = fs, onPath, tmpdir
     if (agent.file && !pointed.has(agent.file)) {
       f.mkdirSync(path.dirname(agent.file), { recursive: true });
       const text = has(agent.file) ? f.readFileSync(agent.file, "utf8") : "";
-      if (text.includes(`My second brain is at ${brain}.`)) {
+      const pointers = [...text.matchAll(/My second brain is at (.+?)\. Read its index\.md first/g)];
+      if (pointers.some((m) => sameDir(f, platform, m[1], brain))) {
         pointed.set(agent.file, "already in");
       } else {
         f.appendFileSync(agent.file, `\n${pointerLine(brain)}\n`);
