@@ -7,6 +7,7 @@ knowledge stays in each project's own AGENTS.md and skills, never here.
 
 - Read `index.md` first. It lists every note in one line each. Then grep for details.
 - Read `taste.md` before you judge or create anything: it says what good means here.
+- Asked what the brain says about something? Use the ask-brain skill: it answers from the notes, with a link to each one, and says when the brain has nothing.
 - `sources/` holds originals (links, pasted text, files). They are evidence, never edited.
   Everything else is interpretation of them.
 
