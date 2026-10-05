@@ -79,24 +79,24 @@ your brain repo. The course's TicketBay box does this: it clones the brain into 
 line and the skills. It never mounts the brain folder on your laptop, so nothing in the box can
 change the files your laptop runs. No brain set up? The box starts without one.
 
-The box pushes the brain itself, with its own token: a GitHub token that can read and write only
-your brain repo, so nothing in the box can push to your other repos with it. In the box,
+The box pushes the brain itself, with its own deploy key: an SSH key that GitHub accepts for your
+brain repo only, so nothing in the box can push to your other repos with it. In the box,
 `./sync.sh` commits and pushes; your laptop gets the box's changes at its next pull (`./sync.sh`).
 
-🙋 **Create the token (once, about 2 minutes):**
-1. GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token.
-2. Repository access: **Only select repositories** → your brain repo. Nothing else.
-3. Permissions → Repository permissions → **Contents: Read and write** (the box clones the private repo and pushes to it). Leave every other permission at "No access".
-4. Pick an expiry (90 days is fine), generate, copy the token.
-5. Save the repo's https URL and the token in a file outside the brain, readable only by you:
+🙋 **Give the box its deploy key (once, about 2 minutes):**
+1. Make a key pair just for the box, with no passphrase, and name your brain repo:
    ```bash
-   mkdir -p ~/.config/brain && printf 'BRAIN_REPO=%s\nBRAIN_GIT_TOKEN=%s\n' 'https://github.com/<you>/brain.git' 'github_pat_…' > ~/.config/brain/box.env && chmod 600 ~/.config/brain/box.env
+   mkdir -p ~/.config/brain && chmod 700 ~/.config/brain
+   ssh-keygen -t ed25519 -N "" -C "brain box" -f ~/.config/brain/box_deploy_key
+   echo 'BRAIN_REPO=git@github.com:<you>/brain.git' > ~/.config/brain/box.env
    ```
-   The box reads the file when it is created: if it is already running, remove it and start it
+2. GitHub → your brain repo → Settings → **Deploy keys** → **Add deploy key**. Paste the contents
+   of `~/.config/brain/box_deploy_key.pub`, tick **Allow write access**, and add it.
+3. The box reads the folder when it is created: if it is already running, remove it and start it
    again (TicketBay: `.devcontainer/README.md`, "The brain in the box").
 
-Never put the token in the brain (it is a git repo) or in a URL. `sync.sh` and the box's start
-script read it from the environment only, so it never lands in `.git/config`.
+The box mounts `~/.config/brain` read-only. `sync.sh` uses the key only for its own git commands
+(`BRAIN_SSH_KEY`), never in a git config. Never put the private key in the brain: it is a git repo.
 
 ## Rules worth knowing
 

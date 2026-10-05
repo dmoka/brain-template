@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Commit whatever changed, take the latest from the remote, push. Safe to run from cron.
-# On a machine without your git login (a dev container), set BRAIN_GIT_TOKEN to a token that
-# can write only this repo: sync.sh then pushes over HTTPS with it and never saves it in .git/config.
+# On a machine without your git login (a dev container), set BRAIN_SSH_KEY to a deploy key that
+# can write only this repo: sync.sh uses it for its own git commands, never in any git config.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 brain="$(pwd -P)"
@@ -12,12 +12,8 @@ git=(git -c safe.directory="$brain")
 if [ -z "$("${git[@]}" config user.email || true)" ]; then
   git+=(-c user.name="brain sync" -c user.email="brain-sync@localhost")
 fi
-if [ -n "${BRAIN_GIT_TOKEN:-}" ]; then
-  # The helper reads the token from the environment, so it never lands in a file or in ps output.
-  git+=(-c credential.helper=
-        -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$BRAIN_GIT_TOKEN"; }; f'
-        -c url.https://github.com/.insteadOf=git@github.com:
-        -c url.https://github.com/.insteadOf=ssh://git@github.com/)
+if [ -n "${BRAIN_SSH_KEY:-}" ]; then
+  export GIT_SSH_COMMAND="ssh -i $BRAIN_SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 fi
 
 # An agent and a cron job can run it at the same time: one sync at a time.
