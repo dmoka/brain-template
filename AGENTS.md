@@ -25,4 +25,4 @@ knowledge stays in each project's own AGENTS.md and skills, never here.
 ## Finish
 
 - Run the lint (`python3 skills/lint/scripts/lint.py`) after you change more than one file.
-- Always leave the repo pushed: `./sync.sh` (commit, pull --rebase, push).
+- Always leave the repo pushed: `node sync.mjs` (commit, pull --rebase, push).
