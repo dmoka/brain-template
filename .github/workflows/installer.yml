@@ -1,0 +1,124 @@
+# Proves install.mjs and sync.mjs on real Windows, macOS and Linux machines, and in Linux containers.
+# Runs only in dmoka/brain-template: a brain made from the template never runs it.
+name: installer
+
+on:
+  push:
+    branches: [main, node-installer]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    if: github.repository == 'dmoka/brain-template'
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The real agent CLIs, so the installer finds them on the PATH
+        run: |
+          npm install -g @anthropic-ai/claude-code @openai/codex
+          command -v claude codex
+      - run: node --test
+      - name: install twice + sync (home and brain paths with spaces)
+        run: node .github/installer-e2e.mjs native claude,codex
+
+  windows-non-admin:
+    if: github.repository == 'dmoka/brain-template'
+    name: windows non-admin user (Developer Mode off, then on)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run the installer as a real non-admin user
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
+          if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+          "Developer Mode on this runner before the test: " + (Get-ItemProperty -Path $key -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense
+
+          # A copy of the brain that any user can read, in a folder with a space.
+          $brain = 'C:\brain e2e'
+          Copy-Item -Recurse -Force $env:GITHUB_WORKSPACE $brain
+          icacls $brain /grant 'Users:(OI)(CI)RX' /T /Q | Out-Null
+
+          # A real local user in the Users group only: no admin, no symlink privilege.
+          $user = 'brain tester'
+          # 14 characters at most: net user asks a question for longer passwords.
+          $pw = 'Bt!' + [guid]::NewGuid().ToString('N').Substring(0, 9) + 'a1'
+          net user "$user" "$pw" /add
+          if ($LASTEXITCODE -ne 0) { throw "could not create the user" }
+          net localgroup Administrators | Out-String
+          whoami /groups | Select-String -Pattern 'Administrators' | Out-String
+          $cred = New-Object System.Management.Automation.PSCredential($user, (ConvertTo-SecureString $pw -AsPlainText -Force))
+          $node = (Get-Command node).Source
+
+          # Start-Process gives the new process this runner's environment: the script gets the
+          # user's own profile folder as an argument and sets HOME, USERPROFILE, TEMP from it.
+          $profileDir = "C:\Users\$user"
+          function Run-AsUser($mode) {
+            $out = "C:\e2e-$mode.out"; $err = "C:\e2e-$mode.err"
+            $p = Start-Process -FilePath $node -ArgumentList "`"$brain\.github\installer-e2e.mjs`" as-user $mode `"$profileDir`"" `
+              -Credential $cred -LoadUserProfile -WorkingDirectory 'C:\' -Wait -PassThru `
+              -RedirectStandardOutput $out -RedirectStandardError $err
+            Get-Content $out, $err | Write-Host
+            return $p.ExitCode
+          }
+
+          Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value 0 -Type DWord
+          $nodev = Run-AsUser 'nodev'
+          Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value 1 -Type DWord
+          $devmode = Run-AsUser 'devmode'
+          Test-Path $profileDir | ForEach-Object { "profile folder $profileDir exists: $_" }
+          (Get-Item "$profileDir\.claude\skills\capture" -ErrorAction SilentlyContinue | Select-Object FullName, LinkType, Target | Format-List | Out-String)
+          "exit codes: Developer Mode off -> $nodev, on -> $devmode"
+          if ($nodev -ne 0 -or $devmode -ne 0) { exit 1 }
+
+  containers:
+    if: github.repository == 'dmoka/brain-template'
+    name: container ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: node:22
+            setup: "true"
+          - image: node:22-alpine
+            setup: apk add --no-cache git
+          - image: ubuntu:24.04
+            setup: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs npm git >/dev/null
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: no agent / Claude only / Codex only / both, each run twice; node --test; sync
+        run: |
+          docker run --rm -v "$PWD:/src:ro" ${{ matrix.image }} sh -c '
+            set -e
+            ${{ matrix.setup }}
+            cp -r /src /brain && cd /brain
+            node --version && git --version
+            npm install -g --silent --prefix /opt/claude @anthropic-ai/claude-code
+            npm install -g --silent --prefix /opt/codex @openai/codex
+            ls /opt/claude/bin /opt/codex/bin
+            node --test
+            node .github/installer-e2e.mjs cases /opt/claude/bin /opt/codex/bin
+          '
