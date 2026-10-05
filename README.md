@@ -111,4 +111,4 @@ Two things to know:
 
 MIT license.
 
-Last verified: 2026-09-29 with Claude Code 2.1.284 (fresh copy in a node:22 container: install, capture, triage, lint)
+Last verified: 2026-10-05 with Claude Code 2.1.284 (fresh copy in a node:22 container: install twice, lint clean, sync.sh against a local bare remote with no git identity, an unreachable remote, a held lock, a folder owned by another user)
