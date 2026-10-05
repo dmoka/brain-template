@@ -15,6 +15,12 @@ Capture is fast and dumb. It writes one file into `inbox/` and stops. It never s
    echo "<fetched or pasted text>" | python3 skills/capture/scripts/new_item.py \
      --title "<short title>" --source "<url | pasted | conversation>" --note "<the user's reason, verbatim>"
    ```
+   A link, or text with a URL in it: keep the URL out of the command line (a dev container blocks every shell command with a URL in it). Write the URL to `inbox/.source` and the text to `inbox/.body` with your file tool, then run:
+   ```bash
+   python3 skills/capture/scripts/new_item.py --title "<short title>" \
+     --source-file inbox/.source --body-file inbox/.body --note "<the user's reason, verbatim>"
+   ```
+   The script deletes both draft files after it writes the item.
 3. Reply in one line: `saved to inbox (<path>)`.
 
 ## Capture on your own
