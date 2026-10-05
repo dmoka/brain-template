@@ -20,7 +20,7 @@ if [ -n "${BRAIN_GIT_TOKEN:-}" ]; then
         -c url.https://github.com/.insteadOf=ssh://git@github.com/)
 fi
 
-# Two machines can share one checkout (a laptop and a container): one sync at a time.
+# An agent and a cron job can run it at the same time: one sync at a time.
 lock="$("${git[@]}" rev-parse --git-dir)/brain-sync.lock"
 if ! mkdir "$lock" 2>/dev/null; then
   echo "another sync is running (or one crashed: remove $lock and run again)" >&2
