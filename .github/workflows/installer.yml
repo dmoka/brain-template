@@ -62,8 +62,10 @@ jobs:
 
           # A real local user in the Users group only: no admin, no symlink privilege.
           $user = 'brain tester'
-          $pw = 'Bt-' + [guid]::NewGuid().ToString('N') + '!a1'
-          net user "$user" "$pw" /add | Out-Null
+          # 14 characters at most: net user asks a question for longer passwords.
+          $pw = 'Bt!' + [guid]::NewGuid().ToString('N').Substring(0, 9) + 'a1'
+          net user "$user" "$pw" /add
+          if ($LASTEXITCODE -ne 0) { throw "could not create the user" }
           net localgroup Administrators | Out-String
           whoami /groups | Select-String -Pattern 'Administrators' | Out-String
           $cred = New-Object System.Management.Automation.PSCredential($user, (ConvertTo-SecureString $pw -AsPlainText -Force))

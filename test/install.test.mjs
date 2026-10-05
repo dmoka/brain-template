@@ -22,7 +22,7 @@ function tmpHome(...dirs) {
 function run(home, { env = {}, platform = process.platform, f = fs, tmpdir = home, onPath = nowhere } = {}) {
   const lines = [];
   const code = install({ brain, env, home, platform, fs: f, onPath, tmpdir, log: (l) => lines.push(l) });
-  return { code, out: lines.join("\n") };
+  return { code, out: lines.join("\n").replaceAll("\\", "/") }; // Windows paths match the same patterns
 }
 
 const linksIn = (dir) =>
@@ -240,7 +240,7 @@ test("the brain through another path (a symlink): pointer line already in, links
   install({ brain: alias, env: {}, home, platform: process.platform, onPath: nowhere, log: () => {} });
   const again = [];
   install({ brain, env: {}, home, platform: process.platform, onPath: nowhere, log: (l) => again.push(l) });
-  assert.match(again.join("\n"), /Claude Code +\d+ link ok .* already in ~\/.claude\/CLAUDE.md/);
+  assert.match(again.join("\n").replaceAll("\\", "/"), /Claude Code +\d+ link ok .* already in ~\/.claude\/CLAUDE.md/);
   assert.equal(fs.readFileSync(path.join(home, ".claude/CLAUDE.md"), "utf8").split("My second brain is at").length - 1, 1);
   assert.equal(fs.readlinkSync(path.join(home, ".claude/skills", skills[0])), path.join(alias, "skills", skills[0]));
 });
