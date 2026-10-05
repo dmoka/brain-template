@@ -36,6 +36,7 @@ test("Claude Code and Codex: skills linked, one pointer line each, safe to run a
   assert.match(first.out, new RegExp(`Claude Code +${skills.length} linked in ~/.claude/skills +added to ~/.claude/CLAUDE.md`));
   assert.match(first.out, new RegExp(`Codex +${skills.length} linked in ~/.agents/skills +added to ~/.codex/AGENTS.md`));
   assert.match(first.out, /Cursor +not found/);
+  assert.match(first.out, /Hermes +not found/);
   for (const dir of [".claude/skills", ".agents/skills"]) {
     assert.deepEqual(linksIn(path.join(home, dir)), skills);
     assert.equal(fs.realpathSync(path.join(home, dir, skills[0])), fs.realpathSync(path.join(brain, "skills", skills[0])));
@@ -85,7 +86,7 @@ test("no agent: says so, exits 1, changes nothing", () => {
   const home = tmpHome();
   const { code, out } = run(home);
   assert.equal(code, 1);
-  assert.match(out, /No coding agent found on this machine \(looked for Claude Code, Codex and Cursor\)/);
+  assert.match(out, /No coding agent found on this machine \(looked for Claude Code, Codex, Cursor and Hermes\)/);
   assert.deepEqual(fs.readdirSync(home), []);
 });
 
@@ -201,7 +202,7 @@ test("Codex and Cursor share ~/.agents/skills: one set of links", () => {
 
 test("CODEX_HOME alone counts as Codex found", () => {
   const agents = findAgents({ env: { CODEX_HOME: "/x" }, home: "/h", platform: "linux", has: nowhere, onPath: nowhere });
-  assert.deepEqual(agents.map((a) => a.found), [false, true, false]);
+  assert.deepEqual(agents.map((a) => a.found), [false, true, false, false]);
   assert.equal(agents[1].file, path.join("/x", "AGENTS.md"));
 });
 
