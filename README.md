@@ -45,7 +45,12 @@ The sample files show the shape. Replace them with your own, or delete them.
 - **Hermes:** clone the repo on the box, add one line to `~/.hermes/SOUL.md`
   (`Before you answer about my work, read <path>/index.md first.`) and add
   `<path>/skills` to `skills.external_dirs` in `~/.hermes/config.yaml`.
-- **Any agent that reads AGENTS.md** (Codex, Cursor, …): point it at `<path>/index.md` the same way.
+- **Codex:** add the same pointer line to its global AGENTS.md:
+  ```bash
+  printf '\n%s\n' "My second brain is at $HOME/brain. Read its index.md first, then grep it, before you search anywhere else, and save new decisions, guidelines and gotchas there (see its AGENTS.md)." >> ~/.codex/AGENTS.md
+  ```
+- **Any other agent that reads AGENTS.md** (Cursor, …): point it at `<path>/index.md` the same way.
+- **A dev container** (like the course's TicketBay box): see [In a dev container](#in-a-dev-container).
 - **An agent that can't clone** (a chat app): serve the brain through an MCP server (module 6).
 
 ## Use it
@@ -64,6 +69,39 @@ The brain is a git repo, and every agent reads the latest version:
 ```
 Agents run it after they change the brain (AGENTS.md says so). For a machine that edits the
 brain without you, add a cron line: `*/15 * * * * cd ~/brain && ./sync.sh`.
+
+## In a dev container
+
+A dev container sees only its own project, so it mounts the brain folder from your laptop, read
+and write. The course's TicketBay box does this: it mounts `~/brain` at `/home/node/brain`,
+and runs `install.sh` there every time it starts (`CLAUDE_DIR=/home/node/.claude`), so Claude
+Code in the box gets the pointer line and the skills. No brain yet? The box creates an empty
+`~/brain` and starts without one.
+
+The box pushes the brain itself, with its own token. Its firewall blocks SSH, so it pushes over
+HTTPS with a GitHub token that can write only your brain repo; nothing in the box can push to
+your other repos with it.
+
+🙋 **Create the token (once, about 2 minutes):**
+1. GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token.
+2. Repository access: **Only select repositories** → your brain repo. Nothing else.
+3. Permissions → Repository permissions → **Contents: Read and write**. Leave every other permission at "No access" (GitHub adds Metadata: read-only itself).
+4. Pick an expiry (90 days is fine), generate, copy the token.
+5. Save it in a file outside the brain, readable only by you:
+   ```bash
+   mkdir -p ~/.config/brain && printf 'BRAIN_GIT_TOKEN=%s\n' 'github_pat_…' > ~/.config/brain/box.env && chmod 600 ~/.config/brain/box.env
+   ```
+   The box reads the file when it is created: if it is already running, remove it and start it again
+   (TicketBay: `.devcontainer/README.md`, "The brain in the box").
+
+Never put the token in the brain folder (the box commits that folder) or in `.git/config` (the
+laptop and the box share it). `sync.sh` reads it from the environment only.
+
+Two things to know:
+- The laptop and the box edit the same folder. `./sync.sh` in the box also commits what you
+  changed on the laptop and haven't synced yet. One sync runs at a time (`.git/brain-sync.lock`).
+- No token? `./sync.sh` still commits in the box, says it did not push, and exits 1. Run
+  `./sync.sh` on the laptop to push.
 
 ## Rules worth knowing
 
