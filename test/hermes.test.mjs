@@ -16,10 +16,15 @@ const skills = fs.readdirSync(brainSkills).sort();
 const nowhere = () => false;
 const SOUL = "You are my agent. Be direct.\n";
 
-// A home with ~/.hermes/config.yaml (when `config` is a string) and ~/.hermes/SOUL.md.
+// Hermes's folder in a home: ~/.hermes, on Windows %LOCALAPPDATA%\hermes (here: ~/AppData/Local/hermes).
+const HERMES_DIR = process.platform === "win32" ? path.join("AppData", "Local", "hermes") : ".hermes";
+const H = `~/${HERMES_DIR.replaceAll("\\", "/")}`; // how the installer's table shows it
+const R = H.replaceAll(".", "\\."); // the same in a RegExp
+
+// A home with <hermes>/config.yaml (when `config` is a string) and <hermes>/SOUL.md.
 function hermesHome(config, { soul = SOUL } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "brain-home-"));
-  const dir = path.join(home, ".hermes");
+  const dir = path.join(home, HERMES_DIR);
   fs.mkdirSync(path.join(dir, "skills"), { recursive: true });
   if (config !== null) fs.writeFileSync(path.join(dir, "config.yaml"), config, { mode: 0o600 });
   if (soul !== null) fs.writeFileSync(path.join(dir, "SOUL.md"), soul);
@@ -174,20 +179,20 @@ test("Hermes found by ~/.hermes: skills folder added, pointer line in SOUL.md, b
   const h = hermesHome(TEMPLATE);
   const first = run(h.home);
   assert.equal(first.code, 0);
-  assert.match(first.out, new RegExp(`Hermes +${skills.length} added to external_dirs in ~/.hermes/config.yaml +added to ~/.hermes/SOUL.md`));
-  assert.match(first.out, /the config.yaml from before this change is saved as ~\/.hermes\/config.yaml.bak\./);
+  assert.match(first.out, new RegExp(`Hermes +${skills.length} added to external_dirs in ${R}/config.yaml +added to ${R}/SOUL.md`));
+  assert.match(first.out, new RegExp(`the config.yaml from before this change is saved as ${R}/config.yaml.bak\\.`));
   assert.match(first.out, /start a new session to use the brain/);
   assert.equal(read(`${h.config}.bak`), TEMPLATE);
   if (process.platform !== "win32") assert.equal((fs.statSync(`${h.config}.bak`).mode & 0o777).toString(8), "600");
   assert.deepEqual(readHermesConfig(read(h.config)).entries, [brainSkills]);
   assert.equal(read(h.soul), `${SOUL}\n${pointerLine(brain)}\n`);
   for (const name of ["Claude Code", "Codex", "Cursor"]) assert.match(first.out, new RegExp(`${name} +not found`));
-  assert.deepEqual(fs.readdirSync(h.home), [".hermes"]); // no links: Hermes reads the brain's folder itself
+  assert.deepEqual(fs.readdirSync(h.home), [HERMES_DIR.split(path.sep)[0]]); // no links: Hermes reads the brain's folder itself
 
   const config = read(h.config);
   const again = run(h.home);
   assert.equal(again.code, 0);
-  assert.match(again.out, new RegExp(`Hermes +${skills.length} already in external_dirs in ~/.hermes/config.yaml +already in ~/.hermes/SOUL.md`));
+  assert.match(again.out, new RegExp(`Hermes +${skills.length} already in external_dirs in ${R}/config.yaml +already in ${R}/SOUL.md`));
   assert.doesNotMatch(again.out, /saved as|start a new session/);
   assert.equal(read(h.config), config);
   assert.equal(pointers(h.soul), 1);
@@ -223,7 +228,7 @@ test("a config.yaml.bak that is already there is kept; the backup gets its own n
   const ours = fs.readdirSync(h.dir).filter((n) => n.startsWith("config.yaml.bak-brain-"));
   assert.equal(ours.length, 1);
   assert.equal(read(path.join(h.dir, ours[0])), "model: x\n");
-  assert.match(out, new RegExp(`saved as ~/.hermes/${ours[0]}\\.`));
+  assert.match(out, new RegExp(`saved as ${R}/${ours[0]}\\.`));
 });
 
 test("a skill with a brain skill's name in another skill folder: warned (folder name, frontmatter name, loose .md, local skills)", () => {
@@ -256,7 +261,7 @@ test("a skill with a brain skill's name in another skill folder: warned (folder 
     [skills[1], "~/team skills/renamed/SKILL.md"],
     [skills[2], `~/team skills/${skills[2]}.md`],
     [skills[2], "~/team skills/with-bom/SKILL.md"],
-    [skills[3], `~/.hermes/skills/mine/${skills[3]}/SKILL.md`],
+    [skills[3], `${H}/skills/mine/${skills[3]}/SKILL.md`],
   ].sort());
   assert.match(out, /\("Ambiguous skill name"\) and loads neither: rename or remove one of them/);
   assert.deepEqual(readHermesConfig(read(h.config)).entries.at(-1), brainSkills);
@@ -280,7 +285,7 @@ test("Hermes on the PATH that has not run yet (no config.yaml, no SOUL.md): says
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "brain-home-"));
   const { code, out } = run(home, { onPath: (cmd) => cmd === "hermes" });
   assert.equal(code, 0);
-  assert.match(out, /Hermes +none: no ~\/.hermes\/config.yaml +not written: ~\/.hermes\/SOUL.md/);
+  assert.match(out, new RegExp(`Hermes +none: no ${R}/config.yaml +not written: ${R}/SOUL.md`));
   assert.match(out, /Hermes has not run here yet: .* Run hermes once, then node install.mjs again\./);
   assert.deepEqual(fs.readdirSync(home), []);
 });
@@ -289,7 +294,7 @@ test("an empty SOUL.md (Hermes's built-in persona) is left empty, with the line 
   const h = hermesHome("", { soul: "\n" });
   const { code, out } = run(h.home);
   assert.equal(code, 0);
-  assert.match(out, /Hermes +\d+ added to external_dirs .* not written: ~\/.hermes\/SOUL.md/);
+  assert.match(out, new RegExp(`Hermes +\\d+ added to external_dirs .* not written: ${R}/SOUL.md`));
   assert.match(out, /SOUL.md is empty, so Hermes uses its built-in persona/);
   assert.equal(read(h.soul), "\n");
 });
@@ -324,6 +329,6 @@ test("Claude Code and Hermes together: links for one, external_dirs for the othe
   const { code, out } = run(h.home);
   assert.equal(code, 0);
   assert.match(out, /Claude Code +\d+ linked in ~\/.claude\/skills +added to ~\/.claude\/CLAUDE.md/);
-  assert.match(out, /Hermes +\d+ added to external_dirs in ~\/.hermes\/config.yaml +added to ~\/.hermes\/SOUL.md/);
+  assert.match(out, new RegExp(`Hermes +\\d+ added to external_dirs in ${R}/config.yaml +added to ${R}/SOUL.md`));
   assert.doesNotMatch(out, /a skill named/); // the ~/.claude/skills links are not one of Hermes's folders
 });
