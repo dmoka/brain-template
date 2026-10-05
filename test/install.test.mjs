@@ -62,7 +62,7 @@ test("Cursor only: skills linked, the pointer line printed to paste, no file wri
   assert.equal(code, 0);
   assert.match(out, /Cursor +\d+ linked in ~\/.agents\/skills +paste it \(below\)/);
   assert.match(out, /Paste this line into Cursor → Customize → Rules → User Rules:/);
-  assert.ok(out.includes(pointerLine(brain)));
+  assert.ok(out.includes(pointerLine(brain).replaceAll("\\", "/")));
   assert.deepEqual(linksIn(path.join(home, ".agents/skills")), skills);
   assert.deepEqual(fs.readdirSync(home).sort(), [".agents", ".cursor"]);
 });

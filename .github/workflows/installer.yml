@@ -71,12 +71,15 @@ jobs:
           $cred = New-Object System.Management.Automation.PSCredential($user, (ConvertTo-SecureString $pw -AsPlainText -Force))
           $node = (Get-Command node).Source
 
+          # Start-Process gives the new process this runner's environment: the script gets the
+          # user's own profile folder as an argument and sets HOME, USERPROFILE, TEMP from it.
+          $profileDir = "C:\Users\$user"
           function Run-AsUser($mode) {
             $out = "C:\e2e-$mode.out"; $err = "C:\e2e-$mode.err"
-            $p = Start-Process -FilePath $node -ArgumentList "`"$brain\.github\installer-e2e.mjs`" as-user $mode" `
+            $p = Start-Process -FilePath $node -ArgumentList "`"$brain\.github\installer-e2e.mjs`" as-user $mode `"$profileDir`"" `
               -Credential $cred -LoadUserProfile -WorkingDirectory 'C:\' -Wait -PassThru `
               -RedirectStandardOutput $out -RedirectStandardError $err
-            Get-Content $out, $err
+            Get-Content $out, $err | Write-Host
             return $p.ExitCode
           }
 
@@ -84,6 +87,8 @@ jobs:
           $nodev = Run-AsUser 'nodev'
           Set-ItemProperty -Path $key -Name AllowDevelopmentWithoutDevLicense -Value 1 -Type DWord
           $devmode = Run-AsUser 'devmode'
+          Test-Path $profileDir | ForEach-Object { "profile folder $profileDir exists: $_" }
+          (Get-Item "$profileDir\.claude\skills\capture" -ErrorAction SilentlyContinue | Select-Object FullName, LinkType, Target | Format-List | Out-String)
           "exit codes: Developer Mode off -> $nodev, on -> $devmode"
           if ($nodev -ne 0 -or $devmode -ne 0) { exit 1 }
 

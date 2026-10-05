@@ -2,7 +2,8 @@
 // Every case uses a fresh home folder with spaces in its path, never the runner's own.
 //   node .github/installer-e2e.mjs native <agents>   agents found on the PATH, e.g. "claude,codex"
 //   node .github/installer-e2e.mjs cases <claudeBin> <codexBin>   none / Claude only / Codex only / both
-//   node .github/installer-e2e.mjs as-user nodev|devmode   Windows: run by a non-admin user, in its real home
+//   node .github/installer-e2e.mjs as-user nodev|devmode <home>   Windows: run by a non-admin user, in its real
+//     profile folder <home> (the process starts with the runner's environment, so the script sets the user's own)
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -158,9 +159,15 @@ if (mode === "native") {
   syncChecks();
 } else if (mode === "as-user") {
   // Run by a non-admin Windows user in its real profile folder; Claude Code found by its folder.
-  const home = os.homedir();
+  const home = args[1];
+  const temp = path.join(home, "AppData", "Local", "Temp");
+  fs.mkdirSync(temp, { recursive: true });
   fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
-  const env = { ...process.env, CLAUDE_DIR: "", CLAUDE_CONFIG_DIR: "", CODEX_HOME: "" };
+  const env = {
+    ...process.env, HOME: home, USERPROFILE: home, TEMP: temp, TMP: temp,
+    APPDATA: path.join(home, "AppData", "Roaming"), LOCALAPPDATA: path.join(home, "AppData", "Local"),
+    CLAUDE_DIR: "", CLAUDE_CONFIG_DIR: "", CODEX_HOME: "",
+  };
   if (args[0] === "nodev") {
     step(`non-admin ${os.userInfo().username}, Developer Mode off: exit 1 with the Developer Mode message, nothing linked`, () => {
       const r = install(env);
