@@ -25,7 +25,7 @@ and the four skills that fill it, keep it true, and answer from it.
 | `skills/lint` | fixes index drift and dead links, reports contradictions |
 | `skills/ask-brain` | "what does my brain say about X?" → an answer from the notes, with a link to each one |
 | `AGENTS.md` | the rules every agent follows in this repo |
-| `install.mjs` | connects the brain to the coding agents on a machine |
+| `install.mjs` | connects the brain to the agents on a machine |
 | `sync.mjs` | commits, pulls, pushes |
 | `test/` | the scripts' own tests (`node --test`); `.github/` runs them on Windows, macOS and Linux |
 
@@ -38,8 +38,8 @@ The sample files show the shape. Replace them with your own, or delete them.
    ```bash
    cd ~/brain && node install.mjs
    ```
-   It finds Claude Code, Codex and Cursor, links the four skills into each one's global skills
-   folder, and adds one line to each one's global instruction file:
+   It finds Claude Code, Codex, Cursor and Hermes, gives each one the four skills, and adds one
+   line to each one's global instruction file:
    > My second brain is at ~/brain. Read its index.md first, then grep it, before you search anywhere else, and save new decisions, guidelines and gotchas there (see its AGENTS.md).
 
    | Agent | Skills folder | Instruction file |
@@ -47,6 +47,7 @@ The sample files show the shape. Replace them with your own, or delete them.
    | Claude Code | `~/.claude/skills` | `~/.claude/CLAUDE.md` |
    | Codex | `~/.agents/skills` | `~/.codex/AGENTS.md` |
    | Cursor | `~/.agents/skills` | none: Cursor keeps its rules in its settings, so the script prints the line to paste into **Customize → Rules → User Rules** |
+   | Hermes | no links: `<brain>/skills` goes into `skills.external_dirs` in `~/.hermes/config.yaml` | `~/.hermes/SOUL.md` |
 
    Cursor reads `~/.agents/skills` and `~/.claude/skills` and shows a skill found in both once
    (checked in Cursor 3.23). Cursor 2.4 skips linked skill folders: update Cursor first.
@@ -55,16 +56,26 @@ The sample files show the shape. Replace them with your own, or delete them.
    never copies: a skill folder that is already there and is not a link is left alone. Run it
    again any time; it doesn't duplicate anything.
 
+   **Hermes** (`hermes` on the PATH, `~/.hermes`, or `$HERMES_HOME`; Windows: `%LOCALAPPDATA%\hermes`):
+   before its first change the script saves the old config as `config.yaml.bak`. It edits only
+   `skills.external_dirs`, line by line; a config.yaml it can't read for sure (tabs, a key twice,
+   quoted or merge keys, a value over several lines) stops it with the line number and exit 1,
+   before anything changes. It
+   warns when another of Hermes's skill folders has a skill with a brain skill's name: Hermes then
+   refuses that name ("Ambiguous skill name"). It never creates config.yaml or SOUL.md, and never
+   writes into an empty SOUL.md (that would replace Hermes's default persona): Hermes installed but
+   never started? Start `hermes` once, then run the script again. Start a new Hermes session to load
+   the brain. With `terminal.backend: docker`, mount the brain in the sandbox at the same path
+   (`docker_volumes`), or the pointer line names a folder the sandbox doesn't have.
+
    **Windows:** the links need Developer Mode. Without it the script stops with exit 1 and says
    so: turn on Settings → System → For developers → Developer Mode, then run it again.
 
 ## Connect other agents
 
 - **Another machine:** clone the repo, run `node install.mjs` there.
-- **Hermes:** clone the repo on the box, add one line to `~/.hermes/SOUL.md`
-  (`Before you answer about my work, read <path>/index.md first.`) and add
-  `<path>/skills` to `skills.external_dirs` in `~/.hermes/config.yaml`.
-- **Codex, Cursor:** `node install.mjs` connects them too (table above). Codex installed later? Run it again.
+- **Hermes on a box:** clone the repo there and run `node install.mjs` (table above).
+- **Codex, Cursor, Hermes:** `node install.mjs` connects them too (table above). Installed one later? Run it again.
 - **Any other agent:** paste the pointer line into its global rules, and link `<path>/skills/*` into its skills folder if it has one.
 - **A dev container** (like the course's TicketBay box): see [In a dev container](#in-a-dev-container).
 - **An agent that can't clone** (a chat app): serve the brain through an MCP server (module 6).
@@ -124,4 +135,4 @@ The box mounts `~/.config/brain` read-only. `sync.mjs` uses the key only for its
 
 MIT license.
 
-Last verified: 2026-10-05 with Claude Code 2.1.289, Codex 0.160.0, Node 22 and 18, by `.github/workflows/installer.yml`: real Windows, macOS and Ubuntu runners (the real claude + codex CLIs found on the PATH, install twice, sync against a local bare remote incl. a refused push, home and brain paths with spaces); a real non-admin Windows user (Developer Mode off: the Developer Mode message and exit 1; on: real symlinks); node:22, node:22-alpine and ubuntu:24.04 containers (no agent / Claude only / Codex only / both, each twice); `node --test` (34 tests) on all of them.
+Last verified: 2026-10-05 with Claude Code 2.1.289, Codex 0.160.0, Hermes v0.21.5, Node 22 and 18, by `.github/workflows/installer.yml`: real Windows, macOS and Ubuntu runners (the real claude + codex CLIs found on the PATH, install twice, sync against a local bare remote incl. a refused push, home and brain paths with spaces); a real non-admin Windows user (Developer Mode off: the Developer Mode message and exit 1; on: real symlinks); node:22, node:22-alpine and ubuntu:24.04 containers (no agent / Claude only / Codex only / both, each twice); Hermes v0.21.5 installed with its official installer on Ubuntu (`hermes skills list` shows the four skills, the prompt it sends to a stand-in model holds the pointer line, a second run changes nothing, every config.yaml the tests write is read back by Hermes's own YAML parser); `node --test` (49 tests) on all of them.

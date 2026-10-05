@@ -4,8 +4,10 @@
 //   node .github/installer-e2e.mjs cases <claudeBin> <codexBin>   none / Claude only / Codex only / both
 //   node .github/installer-e2e.mjs as-user nodev|devmode <home>   Windows: run by a non-admin user, in its real
 //     profile folder <home> (the process starts with the runner's environment, so the script sets the user's own)
+//   node .github/installer-e2e.mjs hermes   the real Hermes (installed in ~/.hermes, `hermes` on the PATH) sees the
+//     brain: its skills list, and the prompt it sends to a stand-in model (.github/mock-model.mjs, no model key)
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -29,10 +31,10 @@ function step(name, fn) {
 }
 
 const tmp = (label) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `${label} with spaces-`)));
-const homeEnv = (home, extra = {}) => ({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_DIR: "", CLAUDE_CONFIG_DIR: "", CODEX_HOME: "", ...extra });
+const homeEnv = (home, extra = {}) => ({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_DIR: "", CLAUDE_CONFIG_DIR: "", CODEX_HOME: "", HERMES_HOME: "", ...extra });
 
 function install(env) {
-  for (const k of ["CLAUDE_DIR", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) if (env[k] === "") delete env[k];
+  for (const k of ["CLAUDE_DIR", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "HERMES_HOME"]) if (env[k] === "") delete env[k];
   const r = spawnSync(process.execPath, [path.join(brain, "install.mjs")], { env, encoding: "utf8" });
   console.log(r.stdout + r.stderr);
   return { code: r.status, out: r.stdout + r.stderr };
@@ -134,6 +136,67 @@ function syncChecks() {
   });
 }
 
+// The real Hermes: a copy of its config.yaml and SOUL.md in a fresh HERMES_HOME with spaces; Hermes's code stays where
+// the official installer put it. Hermes itself must list the brain's skills and send the pointer line in its prompt.
+function hermesChecks() {
+  const real = path.join(os.homedir(), ".hermes");
+  const home = tmp("home");
+  const hermesHome = path.join(home, "hermes home");
+  fs.mkdirSync(path.join(hermesHome, "skills"), { recursive: true });
+  for (const f of ["config.yaml", "SOUL.md"]) fs.copyFileSync(path.join(real, f), path.join(hermesHome, f));
+  const env = { ...process.env, HOME: home, HERMES_HOME: hermesHome };
+  const config = path.join(hermesHome, "config.yaml");
+  const soul = path.join(hermesHome, "SOUL.md");
+  const brainSkills = path.join(brain, "skills");
+  const hermes = (...a) => {
+    const r = spawnSync("hermes", a, { env, cwd: home, encoding: "utf8", timeout: 300000 });
+    console.log(`$ hermes ${a.join(" ")}\n${r.stdout}${r.stderr}`);
+    return r;
+  };
+  const original = fs.readFileSync(config, "utf8");
+
+  step("hermes: install adds the brain's skills folder to external_dirs and the pointer line to SOUL.md", () => {
+    const r = install({ ...env });
+    assert.equal(r.code, 0);
+    assert.match(r.out, new RegExp(`Hermes +${skills.length} added to external_dirs in .*config.yaml +added to .*SOUL.md`));
+    assert.equal(fs.readFileSync(`${config}.bak`, "utf8"), original);
+    assert.ok(fs.readFileSync(config, "utf8").includes(`- ${brainSkills}\n`));
+    assert.equal(pointers(soul), 1);
+  });
+  step("hermes: `hermes skills list` shows the brain's skills", () => {
+    const r = hermes("skills", "list");
+    assert.equal(r.status, 0);
+    for (const s of skills) assert.match(r.stdout, new RegExp(`│ ${s} +│`));
+  });
+  step("hermes: the prompt Hermes sends holds the pointer line and the brain's skills", () => {
+    const log = path.join(home, "requests.jsonl");
+    const mock = spawn(process.execPath, [path.join(brain, ".github", "mock-model.mjs"), "8765", log], { stdio: "inherit" });
+    try {
+      for (const [k, v] of [["model.provider", "custom"], ["model.base_url", "http://127.0.0.1:8765/v1"], ["model.default", "mock-model"], ["model.api_key", "mock-not-a-key"]]) {
+        assert.equal(hermes("config", "set", k, v).status, 0);
+      }
+      const r = hermes("chat", "-q", "Where is my second brain?", "-Q");
+      assert.equal(r.status, 0);
+      const sent = fs.readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l))
+        .filter((q) => q.url.endsWith("/chat/completions")).map((q) => JSON.parse(q.body))
+        .find((b) => JSON.stringify(b.messages).includes("Where is my second brain?"));
+      const system = sent.messages.filter((m) => m.role === "system").map((m) => (typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join(""))).join("\n");
+      assert.ok(system.includes(`My second brain is at ${brain}. Read its index.md first`), "pointer line in the system prompt");
+      for (const s of skills) assert.match(system, new RegExp(`^ *- ${s}: `, "m"));
+    } finally {
+      mock.kill();
+    }
+  });
+  step("hermes: second run (config.yaml rewritten by `hermes config set`) changes nothing", () => {
+    const [c, s] = [fs.readFileSync(config, "utf8"), fs.readFileSync(soul, "utf8")];
+    const r = install({ ...env });
+    assert.equal(r.code, 0);
+    assert.match(r.out, new RegExp(`Hermes +${skills.length} already in external_dirs in .* already in `));
+    assert.equal(fs.readFileSync(config, "utf8"), c);
+    assert.equal(fs.readFileSync(soul, "utf8"), s);
+  });
+}
+
 const [mode, ...args] = process.argv.slice(2);
 console.log(`node ${process.version}, ${process.platform}/${process.arch}, user ${os.userInfo().username}, brain ${brain}`);
 
@@ -184,8 +247,10 @@ if (mode === "native") {
       assert.equal(pointers(path.join(home, ".claude", "CLAUDE.md")), 1);
     });
   }
+} else if (mode === "hermes") {
+  hermesChecks();
 } else {
-  console.log("usage: native <agents> | cases <claudeBin> <codexBin> | as-user nodev|devmode");
+  console.log("usage: native <agents> | cases <claudeBin> <codexBin> | as-user nodev|devmode | hermes");
   process.exit(2);
 }
 

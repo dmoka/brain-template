@@ -122,3 +122,29 @@ jobs:
             node --test
             node .github/installer-e2e.mjs cases /opt/claude/bin /opt/codex/bin
           '
+
+  hermes:
+    if: github.repository == 'dmoka/brain-template'
+    name: hermes (the real Hermes v0.21.5 on ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Hermes with its official installer, pinned to v0.21.5 (tag v2026.9.24)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The install.sh of that tag, through the API with the job's token (raw.githubusercontent.com answers 429 to CI).
+          gh api -H "Accept: application/vnd.github.raw" "repos/NousResearch/hermes-agent/contents/scripts/install.sh?ref=v2026.9.24" > install-hermes.sh
+          bash install-hermes.sh --branch v2026.9.24 --skip-setup --non-interactive --skip-browser
+          # ~/.local/bin also gets Hermes's own Node: put only `hermes` on the PATH, so the tests keep Node 22.
+          mkdir -p "$HOME/hermes-bin" && ln -s "$HOME/.local/bin/hermes" "$HOME/hermes-bin/hermes"
+          echo "$HOME/hermes-bin" >> "$GITHUB_PATH"
+      - run: hermes --version && node --version
+      - name: node --test; every config.yaml it writes is also read by Hermes's own YAML parser
+        run: HERMES_PYTHON="$HOME/.hermes/hermes-agent/venv/bin/python" node --test
+      - name: Hermes lists the brain's skills and sends the pointer line to the model (a stand-in model, no key)
+        run: node .github/installer-e2e.mjs hermes
