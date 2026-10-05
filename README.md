@@ -27,7 +27,7 @@ and the four skills that fill it, keep it true, and answer from it.
 | `AGENTS.md` | the rules every agent follows in this repo |
 | `install.mjs` | connects the brain to the coding agents on a machine |
 | `sync.mjs` | commits, pulls, pushes |
-| `test/` | the scripts' own tests (`node --test`) |
+| `test/` | the scripts' own tests (`node --test`); `.github/` runs them on Windows, macOS and Linux |
 
 The sample files show the shape. Replace them with your own, or delete them.
 
@@ -47,6 +47,9 @@ The sample files show the shape. Replace them with your own, or delete them.
    | Claude Code | `~/.claude/skills` | `~/.claude/CLAUDE.md` |
    | Codex | `~/.agents/skills` | `~/.codex/AGENTS.md` |
    | Cursor | `~/.agents/skills` | none: Cursor keeps its rules in its settings, so the script prints the line to paste into **Customize → Rules → User Rules** |
+
+   Cursor reads `~/.agents/skills` and `~/.claude/skills` and shows a skill found in both once
+   (checked in Cursor 3.23). Cursor 2.4 skips linked skill folders: update Cursor first.
 
    It prints one table: each agent, what it linked, where the line went. It only makes links,
    never copies: a skill folder that is already there and is not a link is left alone. Run it
