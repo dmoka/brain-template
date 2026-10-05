@@ -176,9 +176,12 @@ export function install({ brain, env, home, platform, fs: f = fs, onPath, tmpdir
   return 0;
 }
 
-if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Run as a script (not imported by the tests). Windows paths ignore case.
+const self = fileURLToPath(import.meta.url);
+const invoked = process.argv[1] ? fs.realpathSync(process.argv[1]) : "";
+if (process.platform === "win32" ? invoked.toLowerCase() === self.toLowerCase() : invoked === self) {
   process.exitCode = install({
-    brain: path.dirname(fileURLToPath(import.meta.url)),
+    brain: path.dirname(self),
     env: process.env,
     home: os.homedir(),
     platform: process.platform,
