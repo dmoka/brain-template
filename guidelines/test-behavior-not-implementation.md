@@ -12,3 +12,5 @@ everything.
 **How:** before writing a test, name the behavior a caller would notice. Assert on
 outputs and on state a caller can see. A refactor that changes no behavior must leave
 every test green; if one goes red, rewrite that test, not the code.
+
+Source: [sources/2026-01-18-refactor-broke-tests-notes.md](../sources/2026-01-18-refactor-broke-tests-notes.md)
