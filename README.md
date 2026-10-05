@@ -72,36 +72,31 @@ brain without you, add a cron line: `*/15 * * * * cd ~/brain && ./sync.sh`.
 
 ## In a dev container
 
-A dev container sees only its own project, so it mounts the brain folder from your laptop, read
-and write. The course's TicketBay box does this: it mounts `~/brain` at `/home/node/brain`,
-and runs `install.sh` there every time it starts (`CLAUDE_DIR=/home/node/.claude`), so Claude
-Code in the box gets the pointer line and the skills. No brain yet? The box creates an empty
-`~/brain` and starts without one.
+A dev container sees only its own project, so it keeps its own copy of the brain, cloned from
+your brain repo. The course's TicketBay box does this: it clones the brain into its own volume
+(`/home/node/brain`) the first time it starts, pulls it every time after that, and runs
+`install.sh` there (`CLAUDE_DIR=/home/node/.claude`), so Claude Code in the box gets the pointer
+line and the skills. It never mounts the brain folder on your laptop, so nothing in the box can
+change the files your laptop runs. No brain set up? The box starts without one.
 
-The box pushes the brain itself, with its own token. Its firewall blocks SSH, so it pushes over
-HTTPS with a GitHub token that can write only your brain repo; nothing in the box can push to
-your other repos with it.
+The box pushes the brain itself, with its own token: a GitHub token that can read and write only
+your brain repo, so nothing in the box can push to your other repos with it. In the box,
+`./sync.sh` commits and pushes; your laptop gets the box's changes at its next pull (`./sync.sh`).
 
 🙋 **Create the token (once, about 2 minutes):**
 1. GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token.
 2. Repository access: **Only select repositories** → your brain repo. Nothing else.
-3. Permissions → Repository permissions → **Contents: Read and write**. Leave every other permission at "No access" (GitHub adds Metadata: read-only itself).
+3. Permissions → Repository permissions → **Contents: Read and write** (the box clones the private repo and pushes to it). Leave every other permission at "No access".
 4. Pick an expiry (90 days is fine), generate, copy the token.
-5. Save it in a file outside the brain, readable only by you:
+5. Save the repo's https URL and the token in a file outside the brain, readable only by you:
    ```bash
-   mkdir -p ~/.config/brain && printf 'BRAIN_GIT_TOKEN=%s\n' 'github_pat_…' > ~/.config/brain/box.env && chmod 600 ~/.config/brain/box.env
+   mkdir -p ~/.config/brain && printf 'BRAIN_REPO=%s\nBRAIN_GIT_TOKEN=%s\n' 'https://github.com/<you>/brain.git' 'github_pat_…' > ~/.config/brain/box.env && chmod 600 ~/.config/brain/box.env
    ```
-   The box reads the file when it is created: if it is already running, remove it and start it again
-   (TicketBay: `.devcontainer/README.md`, "The brain in the box").
+   The box reads the file when it is created: if it is already running, remove it and start it
+   again (TicketBay: `.devcontainer/README.md`, "The brain in the box").
 
-Never put the token in the brain folder (the box commits that folder) or in `.git/config` (the
-laptop and the box share it). `sync.sh` reads it from the environment only.
-
-Two things to know:
-- The laptop and the box edit the same folder. `./sync.sh` in the box also commits what you
-  changed on the laptop and haven't synced yet. One sync runs at a time (`.git/brain-sync.lock`).
-- No token? `./sync.sh` still commits in the box, says it did not push, and exits 1. Run
-  `./sync.sh` on the laptop to push.
+Never put the token in the brain (it is a git repo) or in a URL. `sync.sh` and the box's start
+script read it from the environment only, so it never lands in `.git/config`.
 
 ## Rules worth knowing
 
