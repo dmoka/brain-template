@@ -77,29 +77,36 @@ agent:
   max_turns: 500
 `;
 
-test("Hermes's own template config: external_dirs added at the end of the skills block, nothing else changed", () => {
+test("Hermes's own template config: external_dirs added first in the skills block, nothing else changed", () => {
   const out = add(TEMPLATE);
-  assert.equal(
-    out,
-    TEMPLATE.replace("  #   - ~/.agents/skills\n", `  #   - ~/.agents/skills\n  external_dirs:\n    - ${B}\n`),
-  );
+  assert.equal(out, TEMPLATE.replace("skills:\n", `skills:\n  external_dirs:\n    - ${B}\n`));
   sameButBrainAdded(TEMPLATE, out);
   assert.equal(add(out), null);
 });
 
 test("config.yaml cases: no skills key, an existing list, null, [], a flow list, one path, skills: {}", () => {
   const cases = [
-    ["model:\n  default: x\n", `model:\n  default: x\n\nskills:\n  external_dirs:\n    - ${B}\n`],
-    ["model: x", `model: x\n\nskills:\n  external_dirs:\n    - ${B}\n`],
+    ["model:\n  default: x\n", `skills:\n  external_dirs:\n    - ${B}\n\nmodel:\n  default: x\n`],
+    ["# my config\nmodel: x", `skills:\n  external_dirs:\n    - ${B}\n\n# my config\nmodel: x`],
+    ["---\nmodel: x\n", `---\nskills:\n  external_dirs:\n    - ${B}\n\nmodel: x\n`],
     ["", `skills:\n  external_dirs:\n    - ${B}\n`],
+    ["# only a comment\n", `skills:\n  external_dirs:\n    - ${B}\n\n# only a comment\n`],
     ["skills:\n  external_dirs:\n    - ~/dev/skills  # mine\n    - '/a b/c'\nagent: {}\n", `skills:\n  external_dirs:\n    - ~/dev/skills  # mine\n    - '/a b/c'\n    - ${B}\nagent: {}\n`],
     ["skills:\n  external_dirs:\n  - /x\n  disabled: []\n", `skills:\n  external_dirs:\n  - /x\n  - ${B}\n  disabled: []\n`],
     ["skills:\n    external_dirs:\n    disabled: []\n", `skills:\n    external_dirs:\n      - ${B}\n    disabled: []\n`],
+    ["skills:\n  external_dirs: null # none yet\n", `skills:\n  external_dirs: # none yet\n    - ${B}\n`],
+    ["skills:\n  external_dirs: ~\n", `skills:\n  external_dirs:\n    - ${B}\n`],
     ["skills:\n  external_dirs: []\n", `skills:\n  external_dirs: [${B}]\n`],
-    ["skills:\n  external_dirs: [/a, \"/b\"]  # two\n", `skills:\n  external_dirs: [/a, "/b", ${B}]  # two\n`],
+    ["skills:\n  external_dirs: [/a, \"/b]#\"]  # two\n", `skills:\n  external_dirs: [/a, "/b]#", ${B}]  # two\n`],
     ["skills:\n  external_dirs: ~/dev/skills # one\n", `skills:\n  external_dirs: # one\n    - ~/dev/skills\n    - ${B}\n`],
+    ["skills:\n  external_dirs: \"/a # b\"\n", `skills:\n  external_dirs:\n    - "/a # b"\n    - ${B}\n`],
     ["skills: {}\nagent: {}\n", `skills:\n  external_dirs:\n    - ${B}\nagent: {}\n`],
+    ["skills: null\n", `skills:\n  external_dirs:\n    - ${B}\n`],
     ["skills:\nagent: {}\n", `skills:\n  external_dirs:\n    - ${B}\nagent: {}\n`],
+    // Block scalars keep every byte: the new lines never land at their end.
+    ["model: x\nnote: |\n  hi", `skills:\n  external_dirs:\n    - ${B}\n\nmodel: x\nnote: |\n  hi`],
+    ["skills:\n  note: |+\n    hi\n\n\n", `skills:\n  external_dirs:\n    - ${B}\n  note: |+\n    hi\n\n\n`],
+    ["skills:\n  note: |\n    skills:\n    external_dirs: [/x]\n  external_dirs: [/a]\n", `skills:\n  note: |\n    skills:\n    external_dirs: [/x]\n  external_dirs: [/a, ${B}]\n`],
   ];
   for (const [before, expected] of cases) {
     const out = add(before);
@@ -109,9 +116,10 @@ test("config.yaml cases: no skills key, an existing list, null, [], a flow list,
   }
 });
 
-test("Windows line endings and a byte order mark stay as they were", () => {
+test("line endings (CRLF, mixed) and a byte order mark stay as they were", () => {
   const before = "\uFEFFskills:\r\n  external_dirs:\r\n    - C:/x\r\n";
   assert.equal(add(before), `\uFEFFskills:\r\n  external_dirs:\r\n    - C:/x\r\n    - ${B}\r\n`);
+  assert.equal(add("a: 1\nb: 2\r\nskills:\r\n  external_dirs: []\r\n"), `a: 1\nb: 2\r\nskills:\r\n  external_dirs: [${B}]\r\n`);
 });
 
 test("a path that YAML would misread is single-quoted, and read back the same", () => {
@@ -125,19 +133,37 @@ test("a path that YAML would misread is single-quoted, and read back the same", 
 test("config.yaml it can't read for sure: a clear error, nothing parsed as a guess", () => {
   const bad = [
     ["skills:\n\texternal_dirs: []\n", /line 2: indented with a tab/],
+    ["skills:\n  external_dirs:\n  -\t/a\n", /line 3: a tab in the skills block/],
     ["skills:\n  external_dirs: []\nskills:\n  disabled: []\n", /line 3: skills: appears twice/],
     ["skills:\n  external_dirs: []\n  external_dirs: [/x]\n", /line 3: external_dirs appears twice/],
     ["skills:\n  external_dirs:\n    - '/a\n", /line 3: a quote is not closed/],
-    ["skills:\n  external_dirs: [/a,\n    /b]\n", /line 2: external_dirs is a \[…\] list over more than one line/],
+    ["skills:\n  note: \"a\n  external_dirs: [/x]\n  b\"\n  external_dirs: [/a]\n", /line 2: a quote is not closed/],
+    ["foo: \"x\nskills:\n  external_dirs: [/a]\ny\"\n", /line 1: a quote is not closed/],
+    ["skills:\n  external_dirs: [/a,\n    /b]\n", /line 2: a \[…\] or \{…\} value over more than one line/],
+    ["skills:\n  external_dirs: [/a #c]\n", /line 2: a comment inside a \[…\] list/],
     ["skills:\n  external_dirs:\n    -\n      - /nested\n", /line 3: an external_dirs item with no path on its line/],
     ["skills:\n  external_dirs:\n    - /a\n      /continued\n", /line 4: external_dirs has a value over more than one line/],
     ["skills: yes\n", /line 1: skills: is not a block/],
     ["skills: {external_dirs: [/a]}\n", /line 1: skills: is not a block/],
-    ['{"skills": {"external_dirs": []}}\n', /line 1: the file is one flow mapping/],
+    ["skills:\n  \"external_dirs\": [/a]\n", /line 2: a line in the skills block that is not a plain `key:`/],
+    ["skills:\n  ? external_dirs\n  : [/a]\n", /line 2: a line in the skills block that is not a plain `key:`/],
+    ["skills:\n  <<: *base\n", /line 2: a line in the skills block that is not a plain `key:`/],
+    ["skills:\n  - /a\n", /line 2: a line in the skills block that is not a plain `key:`/],
+    ["skills:\n- /a\n", /line 2: a top-level line that is not a plain `key:`/],
+    ["\"skills\":\n  external_dirs: []\n", /line 1: a top-level line that is not a plain `key:`/],
+    ["? skills\n: {}\n", /line 1: a top-level line that is not a plain `key:`/],
+    ["<<: *base\n", /line 1: a top-level line that is not a plain `key:`/],
+    ["!!str skills:\n  external_dirs: []\n", /line 1: a top-level line that is not a plain `key:`/],
+    ['{"skills": {"external_dirs": []}}\n', /line 1: a top-level line that is not a plain `key:`/],
+    ["--- {}\n", /line 1: a top-level line that is not a plain `key:`/],
+    ["hello\n", /line 1: a top-level line that is not a plain `key:`/],
+    ["a: 1\n---\nskills: {}\n", /line 2: a top-level line that is not a plain `key:`/],
+    ["  model: x\n", /line 1: the file starts indented/],
+    ["model: x\n   \n\t\n", /line 3: a blank line with a tab in it/],
+    ["foo: 1\rskills:\r  external_dirs: [/a]\n", /a line break this installer can't read/],
     ["skills:\n  external_dirs: &dirs\n    - /a\n", /line 2: "&dirs" is not a plain path/],
     ["skills:\n  external_dirs: *dirs\n", /line 2: "\*dirs" is not a plain path/],
     ["skills:\n    disabled: []\n  external_dirs: []\n", /line 3: uneven indentation in the skills block/],
-    ["a: 1\n---\nskills: {}\n", /line 2: a second YAML document/],
   ];
   for (const [text, message] of bad) {
     assert.throws(() => add(text), (err) => err instanceof HermesConfigError && message.test(err.message), text);
@@ -210,6 +236,7 @@ test("a skill with a brain skill's name in another skill folder: warned (folder 
   write(path.join(other, "ops", skills[0], "SKILL.md"), `---\nname: ${skills[0]}\n---\nsomeone else's\n`);
   write(path.join(other, "renamed", "SKILL.md"), `---\nname: "${skills[1]}"\ndescription: x\n---\n`);
   write(path.join(other, `${skills[2]}.md`), "a loose skill file\n");
+  write(path.join(other, "with-bom", "SKILL.md"), `\uFEFF---\nname: ${skills[2]}  # a comment\n---\n`);
   write(path.join(other, "pkg", "SKILL.md"), "---\nname: pkg\n---\n");
   write(path.join(other, "pkg", "references", `${skills[3]}.md`), "belongs to pkg, not a skill\n");
   write(path.join(other, "pkg", `${skills[0]}.md`), "a page of the pkg skill, not a skill\n");
@@ -228,6 +255,7 @@ test("a skill with a brain skill's name in another skill folder: warned (folder 
     [skills[0], `~/team skills/ops/${skills[0]}/SKILL.md`],
     [skills[1], "~/team skills/renamed/SKILL.md"],
     [skills[2], `~/team skills/${skills[2]}.md`],
+    [skills[2], "~/team skills/with-bom/SKILL.md"],
     [skills[3], `~/.hermes/skills/mine/${skills[3]}/SKILL.md`],
   ].sort());
   assert.match(out, /\("Ambiguous skill name"\) and loads neither: rename or remove one of them/);

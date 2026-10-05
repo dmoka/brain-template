@@ -133,32 +133,38 @@ export class HermesConfigError extends Error {}
 
 const blankOrComment = (l) => /^\s*(#.*)?$/.test(l);
 const indentOf = (l) => l.match(/^ */)[0].length;
+const plainKey = /^ *[A-Za-z_][\w.-]*\s*:(\s|$)/;
+const nullWord = /^(~|null|Null|NULL)$/;
 
-// One YAML scalar: plain, 'single' or "double" quoted, with an optional comment after it.
-function scalar(text, where) {
+// One YAML scalar: plain, 'single' or "double" quoted, then an optional comment.
+// Returns the value, the scalar as written, and the comment after it.
+function scalar(text, where, inFlow = false) {
   const s = text.trim();
   const fail = (why) => new HermesConfigError(`${where}: ${why}`);
-  let value, rest;
+  let value, raw, rest;
   if (s.startsWith("'")) {
-    const m = s.match(/^'((?:[^']|'')*)'(.*)$/);
+    const m = s.match(/^('((?:[^']|'')*)')(.*)$/);
     if (!m) throw fail("a quote is not closed");
-    [value, rest] = [m[1].replaceAll("''", "'"), m[2]];
+    [raw, value, rest] = [m[1], m[2].replaceAll("''", "'"), m[3]];
   } else if (s.startsWith('"')) {
-    const m = s.match(/^"((?:[^"\\]|\\.)*)"(.*)$/);
+    const m = s.match(/^("((?:[^"\\]|\\.)*)")(.*)$/);
     if (!m) throw fail("a quote is not closed");
     try {
-      value = JSON.parse(`"${m[1]}"`);
+      value = JSON.parse(m[1]);
     } catch {
       throw fail("a backslash escape this installer can't read");
     }
-    rest = m[2];
+    [raw, rest] = [m[1], m[3]];
   } else {
     if (s === "" || /^[-?:,\[\]{}#&*!|>'"%@`]/.test(s)) throw fail(`"${s}" is not a plain path`);
-    [value, rest] = [s.replace(/\s+#.*$/, ""), ""];
-    if (/:(\s|$)/.test(value)) throw fail(`"${value}" is a mapping, not a path`);
+    const m = s.match(/^(.*?)(\s+#.*)?$/);
+    [raw, rest] = [m[1], m[2] || ""];
+    if (inFlow && rest) throw fail("a comment inside a […] list");
+    if (/:(\s|$)/.test(raw)) throw fail(`"${raw}" is a mapping, not a path`);
+    value = raw;
   }
   if (!blankOrComment(rest)) throw fail(`unexpected text after the value: "${rest.trim()}"`);
-  return value;
+  return { value, raw, comment: rest.trim() };
 }
 
 // The items of a one-line flow list "[a, 'b', "c"]" (the text between the brackets).
@@ -181,50 +187,94 @@ function flowItems(inner, where) {
   if (quote) throw new HermesConfigError(`${where}: a quote is not closed`);
   items.push(cur);
   if (items.at(-1).trim() === "") items.pop(); // a trailing comma
-  return items.map((item) => scalar(item, where));
+  return items.map((item) => scalar(item, where, true).value);
+}
+
+// Where the [..] or {..} that opens at the start of `v` closes (quotes respected), or -1.
+function flowEnd(v) {
+  let depth = 0;
+  let quote = null;
+  for (let i = 0; i < v.length; i++) {
+    const ch = v[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === "'" || ch === '"') quote = ch;
+    else if (ch === "[" || ch === "{") depth++;
+    else if (ch === "]" || ch === "}") depth--;
+    if (depth === 0) return i;
+  }
+  return -1;
 }
 
 // Where skills.external_dirs is in config.yaml, and what it holds.
 export function readHermesConfig(text) {
-  const bom = text.startsWith("﻿") ? "﻿" : "";
+  const bom = text.startsWith("\uFEFF") ? "\uFEFF" : "";
   const body = text.slice(bom.length);
-  const eol = body.includes("\r\n") ? "\r\n" : "\n";
-  const lines = body.split(/\r?\n/);
+  if (/\r(?!\n)|[\u0085\u2028\u2029]/.test(body)) {
+    throw new HermesConfigError("config.yaml: a line break this installer can't read (a lone CR, U+0085, U+2028 or U+2029)");
+  }
+  const parts = body.split(/(\r?\n)/);
+  const lines = parts.filter((_, i) => i % 2 === 0);
+  const seps = parts.filter((_, i) => i % 2 === 1); // seps[i] ends lines[i]
+  const eol = seps.filter((s) => s === "\r\n").length * 2 > seps.length ? "\r\n" : "\n";
   const at = (i, why) => new HermesConfigError(`config.yaml line ${i + 1}: ${why}`);
 
-  const content = lines.map((l, i) => [l, i]).filter(([l]) => !blankOrComment(l));
-  if (content.length && /^[\[{]/.test(content[0][0].trim())) {
-    throw at(content[0][1], "the file is one flow mapping or list ({…} or […]), not `key: value` lines");
+  // The lines that carry YAML: not blank, not comments, not the inside of a | or > block.
+  // A value that opens a quote or a [..]/{..} must close it on its own line.
+  const content = [];
+  let block = -1; // inside a block scalar: lines indented deeper than this belong to it
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (block >= 0 && (l.trim() === "" || indentOf(l) > block)) continue;
+    block = -1;
+    if (l.trim() === "" && l.includes("\t")) throw at(i, "a blank line with a tab in it (YAML reads that as an error)");
+    if (blankOrComment(l)) continue;
+    if (/^ *\t/.test(l)) throw at(i, "indented with a tab (YAML allows spaces only)");
+    content.push(i);
+    const m = l.match(/^( *(?:- +)*)(.*)$/);
+    let value = m[2];
+    let column = m[1].length;
+    const key = value.match(/^([^\s'"#\[\]{}][^#]*?|"(?:[^"\\]|\\.)*"|'(?:[^']|'')*')\s*:(\s+|$)/);
+    if (key) {
+      value = value.slice(key[0].length);
+      column = indentOf(l);
+    }
+    if (/^[|>]/.test(value)) block = column;
+    else if (/^["']/.test(value)) scalar(value.replace(/^(["'])/, "$1"), `config.yaml line ${i + 1}`).value;
+    else if (/^[\[{]/.test(value) && flowEnd(value) < 0) throw at(i, "a […] or {…} value over more than one line");
   }
-  for (const [l, i] of content) {
-    if (/^\t/.test(l)) throw at(i, "indented with a tab (YAML allows spaces only)");
-    if (/^(---|\.\.\.)(\s|$)/.test(l) && i !== content[0][1]) throw at(i, "a second YAML document");
-    if (/^["']skills["']\s*:/.test(l)) throw at(i, "a quoted skills key");
+  if (content.length && indentOf(lines[content[0]]) > 0) throw at(content[0], "the file starts indented");
+  const tops = [];
+  for (const i of content) {
+    if (indentOf(lines[i]) > 0) continue;
+    if (/^---\s*(#.*)?$/.test(lines[i]) && i === content[0]) continue;
+    if (!plainKey.test(lines[i])) throw at(i, "a top-level line that is not a plain `key:` (this installer reads only those)");
+    if (/^skills\s*:/.test(lines[i])) tops.push(i);
   }
-  const tops = content.filter(([l]) => /^skills\s*:(\s|$)/.test(l)).map(([, i]) => i);
   if (tops.length > 1) throw at(tops[1], "skills: appears twice");
-  const result = { lines, eol, bom, skills: null, ext: null, entries: [] };
+  const result = { lines, seps, eol, bom, content, skills: null, ext: null, entries: [] };
   if (tops.length === 0) return result;
 
   const s = tops[0];
   const after = lines[s].replace(/^skills\s*:/, "");
-  let flowEmpty = false;
-  if (/^\s*\{\s*\}\s*(#.*)?$/.test(after)) flowEmpty = true;
+  let empty = false; // skills: {} or skills: null
+  if (/^\s*(\{\s*\}|~|null|Null|NULL)\s*(#.*)?$/.test(after)) empty = true;
   else if (!blankOrComment(after)) throw at(s, "skills: is not a block of `key: value` lines below it");
-  let end = s + 1; // the skills block runs to the next top-level key
-  while (end < lines.length && (blankOrComment(lines[end]) || indentOf(lines[end]) > 0)) end++;
-  let last = s; // its last indented line, comments too: a new key goes after it
-  for (let i = s + 1; i < end; i++) {
-    if (blankOrComment(lines[i]) && lines[i].trim() === "") continue;
-    if (/^ *\t/.test(lines[i])) throw at(i, "indented with a tab (YAML allows spaces only)");
-    if (indentOf(lines[i]) > 0) last = i;
-  }
-  if (flowEmpty && last !== s) throw at(s, "skills: {} with lines below it");
-  const children = [];
-  for (let i = s + 1; i < end; i++) if (!blankOrComment(lines[i])) children.push(i);
+  const next = content.find((i) => i > s && indentOf(lines[i]) === 0);
+  const end = next ?? lines.length;
+  const children = content.filter((i) => i > s && i < end);
+  if (empty && children.length) throw at(s, "skills: with a value and lines below it");
+  for (let i = s; i < end; i++) if (/\t/.test(lines[i]) && !blankOrComment(lines[i])) throw at(i, "a tab in the skills block");
   const childIndent = children.length ? indentOf(lines[children[0]]) : 2;
-  for (const i of children) if (indentOf(lines[i]) < childIndent) throw at(i, "uneven indentation in the skills block");
-  result.skills = { line: s, flowEmpty, last, childIndent };
+  let listOpen = false; // a key with nothing after it may have its list items at its own indent
+  for (const i of children) {
+    if (indentOf(lines[i]) < childIndent) throw at(i, "uneven indentation in the skills block");
+    if (indentOf(lines[i]) !== childIndent) continue;
+    if (listOpen && /^ *-(\s|$)/.test(lines[i])) continue;
+    if (!plainKey.test(lines[i])) throw at(i, "a line in the skills block that is not a plain `key:`");
+    listOpen = blankOrComment(lines[i].replace(plainKey, ""));
+  }
+  result.skills = { line: s, empty, childIndent };
 
   const keys = children.filter((i) => indentOf(lines[i]) === childIndent && /^ *external_dirs\s*:(\s|$)/.test(lines[i]));
   if (keys.length > 1) throw at(keys[1], "external_dirs appears twice");
@@ -237,25 +287,25 @@ export function readHermesConfig(text) {
   if (blankOrComment(value)) {
     // a block list below the key, or nothing (null)
     const items = [];
-    for (let i = k + 1; i < end; i++) {
-      if (blankOrComment(lines[i])) continue;
+    for (const i of children.filter((j) => j > k)) {
       const ind = indentOf(lines[i]);
       const item = lines[i].match(/^ *-(\s+(.*))?$/);
       if (ind < childIndent || (ind === childIndent && !item)) break;
       if (!item) throw at(i, "external_dirs has a value over more than one line");
       if (items.length && ind !== items[0].indent) throw at(i, "uneven indentation in external_dirs");
       if (!item[2]) throw at(i, "an external_dirs item with no path on its line");
-      items.push({ line: i, indent: ind, value: scalar(item[2], `config.yaml line ${i + 1}`) });
+      items.push({ line: i, indent: ind, value: scalar(item[2], `config.yaml line ${i + 1}`).value });
     }
-    Object.assign(ext, items.length ? { style: "block", items } : { style: "null", items });
+    Object.assign(ext, { style: items.length ? "block" : "null", items });
   } else if (value.trim().startsWith("[")) {
-    const m = value.match(/^(\s*\[)(.*?)\](\s*(#.*)?)$/);
-    if (!m) throw at(k, "external_dirs is a […] list over more than one line");
-    const open = lines[k].length - value.length + m[1].length;
-    Object.assign(ext, { style: "flow", items: flowItems(m[2], where).map((v) => ({ value: v })), open, close: open + m[2].length });
+    const open = lines[k].length - value.trimStart().length + 1;
+    const close = open - 1 + flowEnd(value.trimStart());
+    if (!blankOrComment(lines[k].slice(close + 1)) || /^\S/.test(lines[k].slice(close + 1))) throw at(k, "external_dirs is a […] list with text after it");
+    Object.assign(ext, { style: "flow", items: flowItems(lines[k].slice(open, close), where).map((v) => ({ value: v })), open, close });
   } else {
-    const raw = value.replace(/\s+#.*$/, "").trim();
-    Object.assign(ext, { style: "scalar", raw, comment: value.slice(value.indexOf(raw) + raw.length).trim(), items: [{ value: scalar(value, where) }] });
+    const one = scalar(value, where);
+    if (nullWord.test(one.raw)) Object.assign(ext, { style: "null", comment: one.comment, items: [] });
+    else Object.assign(ext, { style: "scalar", raw: one.raw, comment: one.comment, items: [{ value: one.value }] });
   }
   result.ext = ext;
   result.entries = ext.items.map((it) => it.value);
@@ -266,50 +316,75 @@ export function readHermesConfig(text) {
 const yamlPath = (p) => (/^[\w~\/.][\w~\/. ()+=@-]*$/.test(p) && !p.endsWith(" ") ? p : `'${p.replaceAll("'", "''")}'`);
 
 // config.yaml with `dir` added to skills.external_dirs, or null when `isDir` matches an entry already.
+// Only new lines are added and at most the one line with the key changes; every other byte stays.
 export function addHermesSkillsDir(text, dir, isDir) {
   const c = readHermesConfig(text);
   if (c.entries.some(isDir)) return null;
-  const { lines, skills, ext } = c;
+  const { lines, seps, eol, skills, ext } = c;
   const item = yamlPath(dir);
   const pad = (n) => " ".repeat(n);
+  const insertAfter = (i, add) => {
+    lines.splice(i + 1, 0, ...add);
+    seps.splice(i + 1, 0, ...add.map(() => eol));
+  };
+  const keyOnly = (i, key, comment) => {
+    lines[i] = `${pad(indentOf(lines[i]))}${key}:${comment ? ` ${comment}` : ""}`;
+  };
   if (!skills) {
-    while (lines.length && lines.at(-1).trim() === "") lines.pop();
-    if (lines.length) lines.push("");
-    lines.push("skills:", "  external_dirs:", `    - ${item}`, "");
+    // A new skills block at the top, above the first key and the comment lines right on it.
+    let first = c.content.find((i) => !/^---/.test(lines[i])) ?? lines.length;
+    if (first === lines.length && lines.at(-1) === "") first = lines.length - 1; // no keys: before the final newline
+    while (first > 0 && /^\s*#/.test(lines[first - 1])) first--;
+    insertAfter(first - 1, ["skills:", "  external_dirs:", `    - ${item}`, ...(first < lines.length && lines[first] !== "" ? [""] : [])]);
   } else if (!ext) {
-    if (skills.flowEmpty) lines[skills.line] = lines[skills.line].replace(/\{\s*\}\s*/, "").trimEnd();
+    if (skills.empty) keyOnly(skills.line, "skills", lines[skills.line].match(/#.*$/)?.[0]);
     const ci = skills.childIndent;
-    lines.splice(skills.last + 1, 0, `${pad(ci)}external_dirs:`, `${pad(ci + 2)}- ${item}`);
+    insertAfter(skills.line, [`${pad(ci)}external_dirs:`, `${pad(ci + 2)}- ${item}`]);
   } else if (ext.style === "null") {
-    lines.splice(ext.line + 1, 0, `${pad(ext.keyIndent + 2)}- ${item}`);
+    if (ext.comment !== undefined) keyOnly(ext.line, "external_dirs", ext.comment);
+    insertAfter(ext.line, [`${pad(ext.keyIndent + 2)}- ${item}`]);
   } else if (ext.style === "block") {
-    const lastItem = ext.items.at(-1);
-    lines.splice(lastItem.line + 1, 0, `${pad(lastItem.indent)}- ${item}`);
+    const last = ext.items.at(-1);
+    insertAfter(last.line, [`${pad(last.indent)}- ${item}`]);
   } else if (ext.style === "flow") {
     const l = lines[ext.line];
     const inner = l.slice(ext.open, ext.close);
     const joined = inner.trim() === "" ? item : `${inner.replace(/,?\s*$/, "")}, ${item}`;
     lines[ext.line] = l.slice(0, ext.open) + joined + l.slice(ext.close);
   } else {
-    const key = `${pad(ext.keyIndent)}external_dirs:${ext.comment ? ` ${ext.comment}` : ""}`;
-    lines.splice(ext.line, 1, key, `${pad(ext.keyIndent + 2)}- ${ext.raw}`, `${pad(ext.keyIndent + 2)}- ${item}`);
+    keyOnly(ext.line, "external_dirs", ext.comment);
+    insertAfter(ext.line, [`${pad(ext.keyIndent + 2)}- ${ext.raw}`, `${pad(ext.keyIndent + 2)}- ${item}`]);
   }
-  const out = c.bom + lines.join(c.eol);
+  const out = c.bom + lines.map((l, i) => l + (seps[i] ?? "")).join("");
   if (!readHermesConfig(out).entries.some(isDir)) throw new Error("install.mjs bug: the new config.yaml does not list the brain's skills");
   return out;
 }
 
-// SKILL.md files under `root` that Hermes would also find by one of `names` (its folder name or the
-// frontmatter name), like tools/skills_tool.py: the same file through a link is not a second skill.
-const SKIPPED_DIRS = new Set([".git", ".github", ".hub", ".archive", ".curator_backups", ".locks", ".venv", "venv", "node_modules", "site-packages", "__pycache__"]);
+// Skills under `root` that Hermes would also find by one of `names`, like tools/skills_tool.py
+// (_collect_skill_candidates): a SKILL.md whose folder or frontmatter name matches (os.walk with links
+// followed, minus Hermes's skipped folders and a skill's support folders), and a loose <name>.md
+// outside any skill (Path.rglob: no skipped folders, linked folders not followed).
+const SKIPPED_DIRS = new Set([".git", ".github", ".hub", ".archive", ".curator_backups", ".locks", ".venv", "venv", "node_modules", "site-packages", "__pycache__", ".tox", ".nox", ".pytest_cache", ".mypy_cache", ".ruff_cache"]);
 const SUPPORT_DIRS = new Set(["references", "templates", "assets", "scripts"]);
 const frontmatterName = (text) =>
-  text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1].match(/^name:\s*["']?([^"'\r\n]+?)["']?\s*$/m)?.[1];
+  text
+    .replace(/^\uFEFF/, "")
+    .match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1]
+    .match(/^name:\s*(?:"([^"\r\n]*)"|'([^'\r\n]*)'|([^#\r\n]*?))\s*(#.*)?$/m)
+    ?.slice(1, 4)
+    .find((v) => v !== undefined);
 
 export function hermesSkillsNamed(f, root, names) {
   const found = [];
+  const list = (dir) => {
+    try {
+      return f.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  };
   const seen = new Set();
-  const walk = (dir, inSkill) => {
+  const walkSkills = (dir) => {
     let real;
     try {
       real = f.realpathSync(dir);
@@ -318,12 +393,7 @@ export function hermesSkillsNamed(f, root, names) {
     }
     if (seen.has(real)) return;
     seen.add(real);
-    let entries;
-    try {
-      entries = f.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
+    const entries = list(dir);
     const isSkill = entries.some((e) => e.name === "SKILL.md");
     if (isSkill) {
       const file = path.join(dir, "SKILL.md");
@@ -336,20 +406,26 @@ export function hermesSkillsNamed(f, root, names) {
     }
     for (const e of entries) {
       const p = path.join(dir, e.name);
-      if (!inSkill && !isSkill && e.name.endsWith(".md") && e.name !== "SKILL.md" && names.includes(e.name.slice(0, -3))) {
-        found.push({ name: e.name.slice(0, -3), file: p }); // Hermes also loads a loose <name>.md as a skill
-      }
-      let dirLike = e.isDirectory();
+      let isDir = e.isDirectory();
       if (e.isSymbolicLink()) {
         try {
-          dirLike = f.statSync(p).isDirectory();
+          isDir = f.statSync(p).isDirectory();
         } catch {}
       }
-      if (!dirLike || SKIPPED_DIRS.has(e.name) || (isSkill && SUPPORT_DIRS.has(e.name))) continue;
-      walk(p, inSkill || isSkill);
+      if (isDir && !SKIPPED_DIRS.has(e.name) && !(isSkill && SUPPORT_DIRS.has(e.name))) walkSkills(p);
     }
   };
-  walk(root, false);
+  const walkLoose = (dir, inSkill) => {
+    const entries = list(dir);
+    const isSkill = inSkill || entries.some((e) => e.name === "SKILL.md");
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walkLoose(p, isSkill);
+      else if (!isSkill && e.name.endsWith(".md") && names.includes(e.name.slice(0, -3))) found.push({ name: e.name.slice(0, -3), file: p });
+    }
+  };
+  walkSkills(root);
+  walkLoose(root, false);
   return found;
 }
 

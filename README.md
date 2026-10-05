@@ -58,8 +58,9 @@ The sample files show the shape. Replace them with your own, or delete them.
 
    **Hermes** (`hermes` on the PATH, `~/.hermes`, or `$HERMES_HOME`; Windows: `%LOCALAPPDATA%\hermes`):
    before its first change the script saves the old config as `config.yaml.bak`. It edits only
-   `skills.external_dirs`, line by line; a config.yaml it can't read for sure (tabs, a key twice, a
-   list over several lines) stops it with the line number and exit 1, before anything changes. It
+   `skills.external_dirs`, line by line; a config.yaml it can't read for sure (tabs, a key twice,
+   quoted or merge keys, a value over several lines) stops it with the line number and exit 1,
+   before anything changes. It
    warns when another of Hermes's skill folders has a skill with a brain skill's name: Hermes then
    refuses that name ("Ambiguous skill name"). It never creates config.yaml or SOUL.md, and never
    writes into an empty SOUL.md (that would replace Hermes's default persona): Hermes installed but
