@@ -19,7 +19,7 @@ It repairs index drift by itself and lists what is left. Then fix the rest:
 |---|---|
 | `index: added … (write its one-line summary)` | replace the TODO with one line on what the file is |
 | `dead link in …` | find where the target moved (grep the name) and fix the link; if it is gone, remove the link |
-| `no source cited: …` | add the source link; if there is none, tell the user |
+| `no source cited: …` | add the source link; a rule the user decided themselves gets `source: own` in its front matter; otherwise tell the user |
 | `superseded decision without …` | set `superseded_by:` to the replacing decision |
 | `decision without a date` | add `date:` from the file name |
 | warnings (inbox, taste) | tell the user; don't delete taste entries |
@@ -33,6 +33,10 @@ Read the notes changed recently, and the guidelines. Look for:
 - **Stale facts:** a project note or guideline that no longer matches what you see in the projects.
 
 Report these to the user in a short list. Never change their meaning yourself.
+
+## 3. Finish
+
+Run `node sync.mjs` from the brain folder. It commits your fixes, pulls, and pushes.
 
 ## Gotchas
 

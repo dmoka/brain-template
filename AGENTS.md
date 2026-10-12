@@ -15,7 +15,7 @@ knowledge stays in each project's own AGENTS.md and skills, never here.
 
 - New things go to `inbox/` first, with the capture skill. Only triage files them.
 - One topic per file. File names: kebab-case, decisions and inbox items start with the date (`YYYY-MM-DD-`).
-- Every note links the source it came from (`sources/…` or a URL).
+- Every note links the source it came from (`sources/…`, a URL, or `source: own` for a rule you decided yourself).
 - Every file you add gets one line in `index.md`, in its folder's section.
 - A changed decision is never deleted: mark the old one `status: superseded`,
   set `superseded_by:` to the new file, and link back from the new one.
