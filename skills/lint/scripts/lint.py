@@ -23,7 +23,7 @@ def rel_links(text):
 
 
 def frontmatter(text):
-    m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+    m = re.match(r"^---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)", text, re.S)
     if not m:
         return {}
     out = {}
@@ -96,11 +96,13 @@ def main():
             if not (p.parent / t).exists() and not (root / t).exists():
                 errors.append(f"dead link in {p.relative_to(root).as_posix()}: {t}")
 
-    # 3. notes and guidelines must cite their source
+    # 3. notes and guidelines must cite their source: a sources/ link, a URL,
+    #    or `source: own` in the front matter (a rule the user decided themselves)
     for p in content:
         if p.parent.name in NEEDS_SOURCE:
             text = p.read_text(encoding="utf-8")
-            if "sources/" not in text and not re.search(r"https?://", text):
+            own = frontmatter(text).get("source", "").strip("'\" ").lower() == "own"
+            if not own and "sources/" not in text and not re.search(r"https?://", text):
                 errors.append(f"no source cited: {p.relative_to(root).as_posix()}")
 
     # 4. decisions: a date, and superseded ones point to their replacement

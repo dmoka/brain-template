@@ -15,7 +15,7 @@ and the four skills that fill it, keep it true, and answer from it.
 | `taste.md` | what good means to you: never, prefer, tie-breakers — each with a reason and a date |
 | `intents/` | what you want: one goal per file, with why and how you'll know it's met |
 | `inbox/` | new things land here; triage empties it |
-| `guidelines/` | how you build in every project |
+| `guidelines/` | how you build in every project; a rule you decided yourself has `source: own` in its front matter |
 | `decisions/` | one per file, dated; changed ones are marked superseded, never deleted |
 | `projects/` | one short admin file per project |
 | `notes/` | everything else worth keeping, each with its source |
@@ -78,13 +78,13 @@ The sample files show the shape. Replace them with your own, or delete them.
 - **Codex, Cursor, Hermes:** `node install.mjs` connects them too (table above). Installed one later? Run it again.
 - **Any other agent:** paste the pointer line into its global rules, and link `<path>/skills/*` into its skills folder if it has one.
 - **A dev container** (like the course's TicketBay box): see [In a dev container](#in-a-dev-container).
-- **An agent that can't clone** (a chat app): serve the brain through an MCP server (module 6).
+- **An agent that can't clone** (a chat app): serve the brain through an MCP server.
 
 ## Use it
 
 - **Save something:** tell any agent "save this" with a link, a snippet, or a screenshot.
 - **Sort it:** "process my inbox" runs triage, then lint. Or schedule it once a day:
-  - Claude Code routine: `/schedule` → daily, prompt "Run the triage skill, then the lint skill, then node sync.mjs" on this repo.
+  - Claude Code routine: `/schedule` → daily, prompt "Run git checkout main, then the triage skill, then the lint skill, then node sync.mjs, which pushes to main" on this repo. A routine pushes to a `claude/…` branch unless the prompt names another branch, and sync.mjs pushes the current branch: without the checkout, the inbox on main never empties.
   - Hermes: `hermes cron create "0 6 * * *" "Run triage, then lint, then node sync.mjs" --skill triage --skill lint --workdir <path>`.
 - **Keep it true:** "lint the brain" any time; it also runs after every triage.
 

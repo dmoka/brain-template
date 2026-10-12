@@ -5,7 +5,7 @@ description: "Save a link, snippet, or decision into the brain inbox. Use when t
 
 # Capture
 
-Capture is fast and dumb. It writes one file into `inbox/` and stops. It never sorts, summarizes into notes, or edits existing notes — that is triage's job.
+Capture is fast and dumb. It writes one file into `inbox/`, runs `node sync.mjs`, and stops. It never sorts, summarizes into notes, or edits existing notes — that is triage's job.
 
 ## Save something
 
@@ -21,7 +21,8 @@ Capture is fast and dumb. It writes one file into `inbox/` and stops. It never s
      --source-file inbox/.source --body-file inbox/.body --note "<the user's reason, verbatim>"
    ```
    The script deletes both draft files after it writes the item.
-3. Reply in one line: `saved to inbox (<path>)`.
+3. Run `node sync.mjs` from the brain folder. It commits the new item, pulls, and pushes.
+4. Reply in one line: `saved to inbox (<path>)`. If sync.mjs says "NOT pushed", add that to the reply.
 
 ## Capture on your own
 
@@ -32,6 +33,7 @@ At the end of a session, capture what would otherwise be lost: a decision and it
 When the user corrects you with a reason, append one line to `taste.md` in the right section:
 `- <the rule> — because <their reason> (YYYY-MM-DD)`. Use their words.
 No reason given? Ask one question ("why?") first. No reason, no entry.
+Then run `node sync.mjs` from the brain folder.
 
 ## Gotchas
 

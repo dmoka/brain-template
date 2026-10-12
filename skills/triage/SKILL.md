@@ -23,6 +23,7 @@ Triage does the thinking capture skipped. Read `AGENTS.md` and `taste.md` first.
 2. **When in doubt, don't create a note.** Prefer extending an existing note over a new one. Grep first.
    If the item changes something the brain already says, update that note (and its index line) instead of adding a second note. A guideline changes only when the user asks for it.
 3. Write or extend the note in a few lines: the insight, why it matters, and a link to the source (`../sources/<file>.md`). Don't dump the raw text.
+   A guideline the user stated in their own words, with no source file: put `source: own` in its front matter (between `---` lines at the top).
 4. Move the original, unchanged: `git mv inbox/<file> sources/<file>` (also for "none" items, so nothing is lost).
 5. Add or update the note's line in `index.md`, in its folder's section: `- [Title](path) — one line on what it is`.
 6. A decision that replaces an older one: follow `decisions/README.md` (the old one gets `status: superseded` and `superseded_by:`). Never delete it.
